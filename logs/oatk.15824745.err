@@ -1,2 +1,0 @@
-/var/spool/slurm/job15824745/slurm_script: line 16: 46763 Killed                  $APPS/oatk/oatk -c 100 -t 8 -m $MITO_DB_PATH -p $CHLO_DB_PATH -o organelle/oatk $HIFI_READS
-slurmstepd: error: Detected 1 oom_kill event in StepId=15824745.batch. Some of the step tasks have been OOM Killed.

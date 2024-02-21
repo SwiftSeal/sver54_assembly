@@ -9,7 +9,7 @@ HIFI_READS="/mnt/shared/projects/jhi/potato/202210_Sver-HiFi_Moray/Solanum_verru
 
 source activate hifiasm
 
-hifiasm --primary -t 32 $HIFI_READS -o assembly/hifiasm
+hifiasm --primary -t 32 $HIFI_READS -o results/assembly/hifiasm
 
-awk '/^S/{{print ">"$2;print $3}}' assembly/hifiasm.p_ctg.gfa > assembly/hifiasm.p_ctg.fa
+awk '/^S/{{print ">"$2;print $3}}' results/assembly/hifiasm.p_ctg.gfa > results/assembly/hifiasm.p_ctg.fa
 

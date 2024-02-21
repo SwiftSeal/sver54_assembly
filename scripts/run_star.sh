@@ -1,0 +1,24 @@
+STAR --runThreadN {threads} \
+--genomeDir results/STAR_index \
+--twopassMode Basic \
+--outSAMstrandField intronMotif \
+--readFilesIn {input.R1} {input.R2} \
+--readFilesCommand gunzip -c \
+--outSAMtype BAM SortedByCoordinate \
+--outFileNamePrefix results/STAR_align/{wildcards.sample}_ \
+--alignIntronMin 60 \
+--alignIntronMax 15000 \
+--alignMatesGapMax 2000 \
+--alignEndsType Local \
+--alignSoftClipAtReferenceEnds No \
+--outSAMprimaryFlag AllBestScore \
+--outFilterMismatchNoverLmax 0.02 \
+--outFilterMismatchNmax 999 \
+--outFilterMismatchNoverReadLmax 1 \
+--outFilterMatchNmin 0 \
+--outFilterMatchNminOverLread 0 \
+--outFilterMultimapNmax 15 \
+--alignTranscriptsPerReadNmax 30000 \
+--alignSJoverhangMin 7 \
+--alignSJDBoverhangMin 7 \
+--alignSJstitchMismatchNmax 0 1 0 0
