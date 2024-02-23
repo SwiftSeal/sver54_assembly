@@ -7,57 +7,62 @@
 #SBATCH -o logs/scaffolding.%j.out
 #SBATCH -e logs/scaffolding.%j.err
 
-zcat "/mnt/shared/projects/jhi/misc/miseq/NextSeq2000/230616_VH00754_44_AACTK5TM5/Analysis/1/Data/fastq/sver_54_1_S1_R1_001.fastq.gz" \
-"/mnt/shared/projects/jhi/misc/miseq/NextSeq2000/230616_VH00754_44_AACTK5TM5/Analysis/1/Data/fastq/sver_54_2_S2_R1_001.fastq.gz" \
-> $TMPDIR/R1.fastq.gz
-
-zcat "/mnt/shared/projects/jhi/misc/miseq/NextSeq2000/230616_VH00754_44_AACTK5TM5/Analysis/1/Data/fastq/sver_54_1_S1_R2_001.fastq.gz" \
-"/mnt/shared/projects/jhi/misc/miseq/NextSeq2000/230616_VH00754_44_AACTK5TM5/Analysis/1/Data/fastq/sver_54_2_S2_R2_001.fastq.gz" \
-> $TMPDIR/R2.fastq.gz
+ASSEMBLY_PATH=$(realpath assembly/hifiasm.p_ctg.fa)
 
 source activate hic
 
-bwa index \
-assembly/hifiasm.p_ctg.fa
+cd $TMPDIR
 
-bwa mem \
--5SP \
--T0 \
--t 16 \
-assembly/hifiasm.p_ctg.fa \
-$TMPDIR/R1.fastq.gz $TMPDIR/R2.fastq.gz \
--o $TMPDIR/aligned.sam
+bwa index $ASSEMBLY_PATH
 
-rm $TMPDIR/R1.fastq.gz
-rm $TMPDIR/R2.fastq.gz
+zcat "/mnt/shared/projects/jhi/misc/miseq/NextSeq2000/230616_VH00754_44_AACTK5TM5/Analysis/1/Data/fastq/sver_54_1_S1_R1_001.fastq.gz" \
+"/mnt/shared/projects/jhi/misc/miseq/NextSeq2000/230616_VH00754_44_AACTK5TM5/Analysis/1/Data/fastq/sver_54_2_S2_R1_001.fastq.gz" \
+> R1.fastq.gz
+
+zcat "/mnt/shared/projects/jhi/misc/miseq/NextSeq2000/230616_VH00754_44_AACTK5TM5/Analysis/1/Data/fastq/sver_54_1_S1_R2_001.fastq.gz" \
+"/mnt/shared/projects/jhi/misc/miseq/NextSeq2000/230616_VH00754_44_AACTK5TM5/Analysis/1/Data/fastq/sver_54_2_S2_R2_001.fastq.gz" \
+> R2.fastq.gz
+
+bwa mem -5SP -T0 -t 16 $ASSEMBLY_PATH R1.fastq.gz R2.fastq.gz | samtools sort -o aligned.bam
+
+rm R1.fastq.gz R2.fastq.gz
 
 pairtools parse \
---min-mapq 40 \
---walks-policy 5unique \
---max-inter-align-gap 30 \
---nproc-in 8 \
---nproc-out 8 \
---chroms-path assembly/hifiasm.p_ctg.fa \
-$TMPDIR/aligned.sam > $TMPDIR/parsed.pairsam
+    --min-mapq 40 \
+    --walks-policy 5unique \
+    --max-inter-align-gap 30 \
+    --chroms-path $ASSEMBLY_PATH \
+    --output parsed.pairsam.gz \
+    aligned.bam
+
+rm aligned.bam
 
 pairtools sort \
---nproc 16 \
-$TMPDIR/parsed.pairsam > $TMPDIR/sorted.pairsam
+    --nproc 16 \
+    --output sorted.pairsam.gz \
+    parsed.pairsam.gz
+
+rm parsed.pairsam.gz
 
 pairtools dedup \
---nproc-in 8 \
---nproc-out 8 \
---mark-dups \
---output-stats scaffolding/pairtools_stats.txt \
---output $TMPDIR/dedup.pairsam \
-$TMPDIR/sorted.pairsam
+    --mark-dups \
+    --output-stats pairtools_stats.txt \
+    --output dedup.pairsam.gz \
+    sorted.pairsam.gz
+
+rm sorted.pairsam.gz
 
 pairtools split \
---nproc-in 8 \
---nproc-out 8 \
---output-pairs $TMPDIR/mapped.pairs \
---output-sam $TMPDIR/unsorted.sam \
-$TMPDIR/dedup.pairsam
+    --output-pairs mapped.pairs \
+    --output-sam unsorted.pairsam \
+    dedup.pairsam
 
-samtools sort -@ 16 -o scaffolding/mapped_pairtools.sam $TMPDIR/unsorted.sam
+rm dedup.pairsam
 
+samtools sort -@ 16 -o mapped_pairtools.bam $TMPDIR/unsorted.parsam
+
+cd -
+
+mkdir -p results/scaffolding
+cp $TMPDIR/mapped_pairtools.bam results/scaffolding/
+cp $TMPDIR/pairtools_stats.txt results/scaffolding/

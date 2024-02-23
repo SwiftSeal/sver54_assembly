@@ -1,2 +1,10 @@
-*.out
-*.err
+logs/*.out
+logs/*.err
+
+analysis/.Rproj.user
+analysis/.Rhistory
+analysis/.RData
+analysis/.Rprofile
+analysis/*.Rproj
+
+results/*
