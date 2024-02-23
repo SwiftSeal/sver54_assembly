@@ -44,7 +44,7 @@ SAMPLES=(
 "Tuber_S32"
 )
 
-source activate STAR
+source activate star
 
 STAR \
     --runThreadN 16 \
@@ -56,8 +56,8 @@ for SAMPLE in "${SAMPLES[@]}"; do
     R1="$RNA_SEQ_DIR/${SAMPLE}${R1_SUFFIX}"
     R2="$RNA_SEQ_DIR/${SAMPLE}${R2_SUFFIX}"
     STAR \
-    --runThreadN {threads} \
-    --genomeDir results/STAR_index \
+    --runThreadN 16 \
+    --genomeDir $TMPDIR/index \
     --twopassMode Basic \
     --outSAMstrandField intronMotif \
     --readFilesIn $R1 $R2 \
@@ -83,5 +83,10 @@ for SAMPLE in "${SAMPLES[@]}"; do
 done
 
 mkdir -p results/star
-samtools merge -@ 16 -o results/star/merged.bam $TMPDIR/*_Aligned.sortedByCoord.out.bam
+
+samtools merge \
+    -@ 16 \
+    -o results/star/merged.bam \
+    $TMPDIR/*_Aligned.sortedByCoord.out.bam
+
 mv $TMPDIR/*_Aligned.sortedByCoord.out.bam results/star/

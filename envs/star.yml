@@ -1,3 +1,4 @@
+name: star
 channels:
  - bioconda
 dependencies:
