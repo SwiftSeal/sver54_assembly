@@ -7,9 +7,10 @@
 #SBATCH -o logs/windows.%j.out
 #SBATCH -e logs/windows.%j.err
 
-ASSEMBLY_FASTA="/mnt/shared/scratch/msmith/solanum_verrucosum/results/genome/solanum_verrucosum.fa"
-GENE_BED="/mnt/shared/scratch/msmith/solanum_verrucosum/results/genes/solanum_verrucosum.bed"
-EDTA_GFF="/mnt/shared/scratch/msmith/solanum_verrucosum/results/edta/solanum_verrucosum.fa.mod.EDTA.TEanno.gff3"
+BASE_DIR="/mnt/shared/scratch/msmith/solanum_verrucosum"
+ASSEMBLY_FASTA="$BASE_DIR/results/genome/solanum_verrucosum.fa"
+GENE_BED="$BASE_DIR/results/genes/solanum_verrucosum.bed"
+EDTA_GFF="$BASE_DIR/results/edta/solanum_verrucosum.fa.mod.EDTA.TEanno.gff3"
 
 source activate windows
 
@@ -18,13 +19,29 @@ samtools faidx
 cut -f1,2 "$ASSEMBLY_FASTA.fai" > "$TMPDIR/chrom.sizes"
 
 # make 1mb windows
-bedtools makewindows -g "$TMPDIR/chrom.sizes" -w 1000000 > "$TMPDIR/windows_1mb.bed"
+bedtools makewindows \
+    -g "$TMPDIR/chrom.sizes" \
+    -w 1000000 \
+    > "$TMPDIR/windows_1mb.bed"
+
+# calculate methylation coverage
+multiBigwigSummary BED-file \
+    -b "/mnt/shared/scratch/msmith/solanum_verrucosum/results/deepsignal/freq.CG.bw" \
+    --bed "$TMPDIR/windows_1mb.bed" \
+    -out results/windows/methylation.npz \
+    --outRaw results/windows/methylation.tab
 
 # calculate gc content
-bedtools nuc -fi "$ASSEMBLY_FASTA" -bed "$TMPDIR/windows_1mb.bed" > results/windows/gc.bed
+bedtools nuc \
+    -fi "$ASSEMBLY_FASTA" \
+    -bed "$TMPDIR/windows_1mb.bed" \
+    > results/windows/gc.bed
 
 # calculate gene coverage
-bedtools coverage -a "$TMPDIR/windows_1mb.bed" -b "$GENE_BED" > results/windows/genes.bed
+bedtools coverage \
+    -a "$TMPDIR/windows_1mb.bed" \
+    -b "$GENE_BED" \
+    > results/windows/genes.bed
 
 # calculate TE coverage
 
@@ -48,7 +65,22 @@ for feature in "${!features[@]}"; do
     done < "$EDTA_GFF"
 done
 
-bedtools coverage -a $TMPDIR/windows_1mb.bed -b $TMPDIR/copia.bed > results/windows/copia.bed
-bedtools coverage -a $TMPDIR/windows_1mb.bed -b $TMPDIR/gypsy.bed > results/windows/gypsy.bed
-bedtools coverage -a $TMPDIR/windows_1mb.bed -b $TMPDIR/helitron.bed > results/windows/helitron.bed
-bedtools coverage -a $TMPDIR/windows_1mb.bed -b $TMPDIR/tir.bed > results/windows/tir.bed
+bedtools coverage \
+    -a $TMPDIR/windows_1mb.bed \
+    -b $TMPDIR/copia.bed \
+    > results/windows/copia.bed
+
+bedtools coverage \
+    -a $TMPDIR/windows_1mb.bed \
+    -b $TMPDIR/gypsy.bed \
+    > results/windows/gypsy.bed
+
+bedtools coverage \
+    -a $TMPDIR/windows_1mb.bed \
+    -b $TMPDIR/helitron.bed \
+    > results/windows/helitron.bed
+
+bedtools coverage \
+    -a $TMPDIR/windows_1mb.bed \
+    -b $TMPDIR/tir.bed \
+    > results/windows/tir.bed
