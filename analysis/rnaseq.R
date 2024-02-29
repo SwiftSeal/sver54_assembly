@@ -1,5 +1,7 @@
 library(dplyr)
 library(stringr)
+library(purrr)
+library(tibble)
 library(readr)
 library(limma)
 library(edgeR)
@@ -44,7 +46,7 @@ contrast_matrix <- makeContrasts(
   Temperature35vs25 = conditionTemperature_35C - conditionTemperature_25C,
   Temperature35vs4 = conditionTemperature_35C - conditionTemperature_4C,
   Temperature25vs4 = conditionTemperature_25C - conditionTemperature_4C,
-  levels = colnames(design)
+  levels = colnames(design_matrix)
 )
 
 # create DGEList object
@@ -55,7 +57,7 @@ experiment_dgelist <- DGEList(
 
 # Filter out lowly expressed genes
 dim(experiment_dgelist)
-keep <- filterByExpr(experiment_dgelist, design)
+keep <- filterByExpr(experiment_dgelist, design_matrix)
 experiment_dgelist <- experiment_dgelist[keep,]
 dim(experiment_dgelist)
 
@@ -75,17 +77,16 @@ plotSA(experiment_voom)
 
 summary(decideTests(experiment_voom))
 
-tfit <- treat(vfit, lfc = 1)
-dt <- decideTests(tfit, p.value = 0.01, adjust.method = "BH")
+tfit <- treat(experiment_voom, lfc = 1)
+dt <- decideTests(experiment_voom, p.value = 0.01, adjust.method = "BH")
 summary(dt)
 
 # a little bit weird, but merge all the results into one dataframe
 treats <- map(
-  1:ncol(dt),
-  ~topTreat(tfit, coef = .x, n = Inf) %>%
-    mutate(coef = colnames(dt)[.x]) %>%
-    rownames_to_column(var = "gene")
-) %>%
+  1:ncol(dt), ~topTreat(tfit, coef = .x, n = Inf) %>%
+  mutate(coef = colnames(dt)[.x]) %>%
+  rownames_to_column(var = "gene")
+  ) %>%
   list_rbind() %>%
   mutate(status = case_when(
     adj.P.Val < 0.01 & logFC > 0 ~ "up-regulated",
@@ -99,8 +100,7 @@ treats_summary <- treats %>%
 
 # plot number of significant differential gene expressions
 plot_significant <- ggplot(treats_summary %>% filter(status != "not significant"), aes(y = coef, x = n, fill = status)) +
-  geom_bar(stat = "identity", position = "dodge") +
-  scale_fill_manual(values = c("up-regulated" = colours[1], "down-regulated" = colours[2]))
+  geom_bar(stat = "identity", position = "dodge")
 
 ggsave(plot_significant, filename = "results/significant_genes.png", width = 6, height = 3, units = "in", dpi = 300)
 
@@ -110,10 +110,18 @@ plot_MA <- ggplot(treats, aes(x = logFC, y = AveExpr, colour = status)) +
   geom_point(data = treats %>% filter(status == "up-regulated")) +
   geom_point(data = treats %>% filter(status == "down-regulated")) +
   facet_wrap(~coef, ncol = 2) +
-  theme(legend.position = c(0.75, 0.12), legend.justification = c(0.5, 0.5)) +
-  scale_colour_manual(values = c("not significant" = colours[7], "up-regulated" = colours[1], "down-regulated" = colours[2]))
+  theme(legend.position = c(0.75, 0.12), legend.justification = c(0.5, 0.5))
 
 ggsave(plot_MA, filename = "results/MA_plot.png", width = 6, height = 6, units = "in", dpi = 300)
 
 write.table(treats, file = "results/differential_expression.tsv", sep = "\t", quote = FALSE, row.names = FALSE)
+
+lcpm <- cpm(experiment_dgelist, log = TRUE)
+
+de_genes <- treats %>%
+  filter(status %in% c("up-regulated", "down-regulated")) %>%
+  select(gene)
+
+lcpm %>%
+  filter(row.names(lcpm) %in% )
 

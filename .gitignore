@@ -8,3 +8,4 @@ analysis/.Rprofile
 analysis/*.Rproj
 
 results/*
+.Rproj.user
