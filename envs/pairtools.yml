@@ -1,0 +1,9 @@
+name: pairtools
+channels:
+  - bioconda
+dependencies:
+  - samtools=1.17
+  - pairtools=1.0.2
+  - numpy=1.23.5
+  - bwa=0.7.17
+  - yahs=1.2a.2

@@ -9,3 +9,6 @@ analysis/*.Rproj
 
 results/*
 .Rproj.user
+
+.DS_Store
+
