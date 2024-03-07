@@ -1,5 +1,8 @@
 library(dplyr)
 library(stringr)
+library(ggplot2)
+library(ComplexHeatmap)
+library(tidyr)
 library(purrr)
 library(tibble)
 library(readr)
@@ -68,6 +71,18 @@ boxplot(cpm(experiment_dgelist, log = TRUE))
 
 plotMDS(cpm(experiment_dgelist, log = TRUE))
 
+# Calculate mean lcpm per sample for each gene
+lcpm <- cpm(experiment_dgelist, log = TRUE)
+
+lcpm <- lcpm %>%
+  as_tibble(rownames = NA) %>%
+  rownames_to_column(var = "gene") %>%
+  pivot_longer(!gene, names_to = "condition", values_to = "lcpm") %>%
+  mutate(condition = experiment_dgelist$samples[condition, "group"]) %>%
+  group_by(gene, condition) %>%
+  summarise(lcpm = mean(lcpm))
+
+
 # Remove heteroscedascity
 experiment_voom <- voom(experiment_dgelist, design_matrix, plot = TRUE)
 experiment_voom <- lmFit(experiment_voom, design_matrix)
@@ -98,30 +113,14 @@ treats_summary <- treats %>%
   group_by(coef, status) %>%
   summarise(n = n())
 
-# plot number of significant differential gene expressions
-plot_significant <- ggplot(treats_summary %>% filter(status != "not significant"), aes(y = coef, x = n, fill = status)) +
-  geom_bar(stat = "identity", position = "dodge")
-
-ggsave(plot_significant, filename = "results/significant_genes.png", width = 6, height = 3, units = "in", dpi = 300)
-
-# plot mean expression vs logFC
-plot_MA <- ggplot(treats, aes(x = logFC, y = AveExpr, colour = status)) +
-  geom_point(data = treats %>% filter(status == "not significant")) +
-  geom_point(data = treats %>% filter(status == "up-regulated")) +
-  geom_point(data = treats %>% filter(status == "down-regulated")) +
-  facet_wrap(~coef, ncol = 2) +
-  theme(legend.position = c(0.75, 0.12), legend.justification = c(0.5, 0.5))
-
-ggsave(plot_MA, filename = "results/MA_plot.png", width = 6, height = 6, units = "in", dpi = 300)
-
-write.table(treats, file = "results/differential_expression.tsv", sep = "\t", quote = FALSE, row.names = FALSE)
-
-lcpm <- cpm(experiment_dgelist, log = TRUE)
-
 de_genes <- treats %>%
   filter(status %in% c("up-regulated", "down-regulated")) %>%
-  select(gene)
+  pull(gene)
 
-lcpm %>%
-  filter(row.names(lcpm) %in% )
+lcpm_de_genes <- lcpm %>%
+  filter(gene %in% de_genes) %>%
+  pivot_wider(names_from = condition, values_from = lcpm) %>%
+  column_to_rownames(var = "gene")
+
+Heatmap(lcpm_de_genes)
 

@@ -7,9 +7,9 @@
 #SBATCH -o logs/scaffolding.%j.out
 #SBATCH -e logs/scaffolding.%j.err
 
-ASSEMBLY_PATH=$(realpath assembly/hifiasm.p_ctg.fa)
+ASSEMBLY_PATH=$(realpath results/quickmerge/merged_quickmerge.fasta)
 
-source activate hic
+source activate pairtools
 
 cd $TMPDIR
 

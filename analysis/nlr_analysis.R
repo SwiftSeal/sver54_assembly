@@ -16,15 +16,13 @@ rnaseq <- read.table("../results/differential_expression.tsv",
                      sep = "\t",
                      header = TRUE) %>%
   mutate(gene = paste0(gene, ".t1_1")) %>%
-  filter(gene %in% resistify$Sequence)
+  filter(gene %in% resistify$Sequence) %>%
   filter(coef == "Infection")
   
 
 # plot tree --------------------------------------------------------------------
 
 nlr_tree <- read.tree("../results/resistify/nbarc_ced4.tree")
-
-plot <- ggtree(nlr_tree)
 
 ggplot(rnaseq, aes(x = logFC, colour = coef)) +
   geom_density()

@@ -11,11 +11,6 @@ Leaf	3	Leaf_Rep3
 Root	1	Root_Rep1
 Root	2	Root_Rep2
 Root	3	Root_Rep3
-Salt_100mM_15d	1	Salt_100_mM_15_days
-Salt_100mM_30d	1	Salt_100_mM_30_days
-Salt_200mM_30d	1	Salt_200_mM_15_days
-Salt_0mM_15d	1	Salt_control_0mM_15_days
-Salt_0mM_30d	1	Salt_control_0mM_30_days
 Shoot	1	Shoot_Rep1
 Shoot	2	Shoot_Rep2
 Shoot	3	Shoot_Rep3
@@ -28,4 +23,3 @@ Temperature_35C	3	Temperature_stress_35C_Rep3
 Temperature_4C	1	Temperature_stress_4C_Rep1
 Temperature_4C	2	Temperature_stress_4C_Rep2
 Temperature_4C	3	Temperature_stress_4C_Rep3
-Tuber	1	Tuber
