@@ -6,9 +6,27 @@ process SamtoolsFaidx {
     input:
     path assembly
     output:
-    path
+    path *.fa
+    path *.fai
     script:
     """
+    samtools faidx $input
+    """
+}
+
+process BwaIndex {
+    container 'https://depot.galaxyproject.org/singularity/bwa:0.7.16--pl5.22.0_0'
+    cpus 1
+    memory '4 GB'
+    time '1h'
+    input:
+    path assembly
+    output:
+    path 'index'
+    script:
+    """
+    mkdir -p index
+    bwa index -p index/index $assembly
     """
 }
 
@@ -18,7 +36,7 @@ process BwaMem {
     memory '64 GB'
     time '24h'
     input:
-    path(assembly)
+    path(index)
     path(R1_1)
     path(R1_2)
     path(R2_1)
@@ -30,7 +48,7 @@ process BwaMem {
     bwa mem \
       -5SP \
       -t ${task.cpus} \
-      ${assembly} \
+      $index/index \
       <(zcat $R1_1 $R1_2) <(zcat $R2_1 $R2_2) \
       -o aligned.sam
     """
@@ -42,7 +60,8 @@ process PairtoolsParse {
     memory '16 GB'
     time '6h'
     input:
-    tuple path(assembly), path(aligned)
+    path assembly
+    path aligned
     output:
     path 'parsed.pairsam'
     script:
@@ -63,15 +82,14 @@ process PairtoolsSort {
     memory '16 GB'
     time '6h'
     input:
-    path 'parsed.pairsam'
-    path
+    path parsed
     output:
     path 'sorted.pairsam'
     script:
     """
     pairtools sort \
       --nproc ${task.cpus} \
-      $parsed.pairsam \
+      $parsed \
       > sorted.pairsam
     """
 }
@@ -83,17 +101,17 @@ process PairtoolsDeduplicate {
     memory '16 GB'
     time '6h'
     input:
-    path 'sorted.pairsam'
-    path
+    path sorted
     output:
     path 'dedup.pairsam'
+    path 'dedup.stats'
     script:
     """
     pairtools dedup \
       --mark-dups \
       --output-stats dedup.stats \
       --output dedup.pairsam \
-      $sorted.pairsam
+      $sorted
     """
 }
 
@@ -103,16 +121,16 @@ process PairtoolsSplit {
     memory '16 GB'
     time '6h'
     input:
-    path 'dedup.pairsam'
-    path
+    path dedup
     output:
-    path 'split.pairsam'
+    path 'unsorted.sam'
+    path 'mapped.pairs'
     script:
     """
     pairtools split \
       --output-pairs mapped.pairs \
       --output-sam unsorted.sam \
-      $dedup.pairsam
+      $dedup
     """
 }
 
@@ -122,8 +140,7 @@ process SamtoolsSort {
     memory '16 GB'
     time '6h'
     input:
-    path 'unsorted.sam'
-    path
+    path unsorted
     output:
     path 'sorted.bam'
     script:
@@ -131,7 +148,7 @@ process SamtoolsSort {
     samtools sort \
       --threads ${task.cpus} \
       -o sorted.bam \
-      unsorted.sam
+      $unsorted
     """
 }
 
@@ -182,21 +199,17 @@ process JuicerTools {
     java -jar -Xmx32G $APPS/juicer_tools.1.9.9_jcuda.0.8.jar pre \
       $juicer_txt \
       juicer.hic \
-      <(cat $juicer_log | grep PRE_C_SIZE | awk '{print $2" "$3}')
+      <(cat $juicer_log | grep PRE_C_SIZE | awk '{print \$2" "\$3}')
     """
 }
 
 workflow {
+    index = BwaIndex(Channel.fromPath(params.assembly))
     aligned_reads = BwaMem(
-        path(params.assembly),
-        path(params.R1_1),
-        path(params.R1_2),
-        path(params.R2_1),
-        path(params.R2_2)
+        index,
+        Channel.fromPath(params.R1_1),
+        Channel.fromPath(params.R1_2),
+        Channel.fromPath(params.R2_1),
+        Channel.fromPath(params.R2_2)
     )
-    parsed_reads = PairtoolsParse(
-    sorted_reads = PairtoolsSort(parsed: parsed_reads)
-    dedup_reads = PairtoolsDeduplicate(sorted: sorted_reads)
-    split_reads = PairtoolsSplit(dedup: dedup_reads)
-    sorted_bam = SamtoolsSort(unsorted: split_reads)
 }
