@@ -15,15 +15,19 @@ source activate pairtools
 
 bwa-mem2 index $ASSEMBLY_PATH
 
-zcat "$READ_PATH/sver_54_1_S1_R1_001.fastq.gz" \
-"$READ_PATH/sver_54_2_S2_R1_001.fastq.gz" \
-> $TMPDIR/R1.fastq.gz
+R1_1="$READ_PATH/sver_54_1_S1_R1_001.fastq.gz"
+R1_2="$READ_PATH/sver_54_2_S2_R1_001.fastq.gz"
 
-zcat "$READ_PATH/sver_54_1_S1_R2_001.fastq.gz" \
-"$READ_PATH/sver_54_2_S2_R2_001.fastq.gz" \
-> $TMPDIR/R2.fastq.gz
+R2_1="$READ_PATH/sver_54_1_S1_R2_001.fastq.gz"
+R2_2="$READ_PATH/sver_54_2_S2_R2_001.fastq.gz"
 
-bwa-mem2 mem -5SP -T0 -t 16 $ASSEMBLY_PATH $TMPDIR/R1.fastq.gz $TMPDIR/R2.fastq.gz | samtools sort -o results/scaffolding/aligned.bam
+bwa-mem2 mem \
+  -5SP \
+  -T0 \
+  -t 16 \
+  $ASSEMBLY_PATH \
+  <(zcat $R1_1 $R1_2) <(zcat $R2_1 $R2_2) \
+  | samtools sort -o results/scaffolding/aligned.bam
 
 pairtools parse \
   --min-mapq 40 \
