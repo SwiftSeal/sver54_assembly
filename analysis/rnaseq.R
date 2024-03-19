@@ -122,5 +122,8 @@ lcpm_de_genes <- lcpm %>%
   pivot_wider(names_from = condition, values_from = lcpm) %>%
   column_to_rownames(var = "gene")
 
-Heatmap(lcpm_de_genes)
+png(file = "rnaseq_heatmap.png", width = 4, height = 10, units = "in", res = 300)
+plot <- Heatmap(lcpm_de_genes)
+draw(plot)
+dev.off()
 

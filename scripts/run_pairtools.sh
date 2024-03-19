@@ -2,67 +2,54 @@
 
 #SBATCH -p long
 #SBATCH -c 16
-#SBATCH --mem=32G
+#SBATCH --exclude=n17-28-256-starbuck,n19-28-384-nicknack,n19-28-384-oddjob
+#SBATCH --mem=48G
 #SBATCH --export=ALL
-#SBATCH -o logs/scaffolding.%j.out
-#SBATCH -e logs/scaffolding.%j.err
+#SBATCH -o logs/pairtools.%j.out
+#SBATCH -e logs/pairtools.%j.err
 
 ASSEMBLY_PATH=$(realpath results/quickmerge/merged_quickmerge.fasta)
+READ_PATH="/mnt/shared/projects/jhi/potato/202210_Sver-HiFi_Moray/hic"
 
 source activate pairtools
 
-cd $TMPDIR
+bwa-mem2 index $ASSEMBLY_PATH
 
-bwa index $ASSEMBLY_PATH
+zcat "$READ_PATH/sver_54_1_S1_R1_001.fastq.gz" \
+"$READ_PATH/sver_54_2_S2_R1_001.fastq.gz" \
+> $TMPDIR/R1.fastq.gz
 
-zcat "/mnt/shared/projects/jhi/misc/miseq/NextSeq2000/230616_VH00754_44_AACTK5TM5/Analysis/1/Data/fastq/sver_54_1_S1_R1_001.fastq.gz" \
-"/mnt/shared/projects/jhi/misc/miseq/NextSeq2000/230616_VH00754_44_AACTK5TM5/Analysis/1/Data/fastq/sver_54_2_S2_R1_001.fastq.gz" \
-> R1.fastq.gz
+zcat "$READ_PATH/sver_54_1_S1_R2_001.fastq.gz" \
+"$READ_PATH/sver_54_2_S2_R2_001.fastq.gz" \
+> $TMPDIR/R2.fastq.gz
 
-zcat "/mnt/shared/projects/jhi/misc/miseq/NextSeq2000/230616_VH00754_44_AACTK5TM5/Analysis/1/Data/fastq/sver_54_1_S1_R2_001.fastq.gz" \
-"/mnt/shared/projects/jhi/misc/miseq/NextSeq2000/230616_VH00754_44_AACTK5TM5/Analysis/1/Data/fastq/sver_54_2_S2_R2_001.fastq.gz" \
-> R2.fastq.gz
-
-bwa mem -5SP -T0 -t 16 $ASSEMBLY_PATH R1.fastq.gz R2.fastq.gz | samtools sort -o aligned.bam
-
-rm R1.fastq.gz R2.fastq.gz
+bwa-mem2 mem -5SP -T0 -t 16 $ASSEMBLY_PATH $TMPDIR/R1.fastq.gz $TMPDIR/R2.fastq.gz | samtools sort -o results/scaffolding/aligned.bam
 
 pairtools parse \
-    --min-mapq 40 \
-    --walks-policy 5unique \
-    --max-inter-align-gap 30 \
-    --chroms-path $ASSEMBLY_PATH \
-    --output parsed.pairsam.gz \
-    aligned.bam
-
-rm aligned.bam
+  --min-mapq 40 \
+  --walks-policy 5unique \
+  --max-inter-align-gap 30 \
+  --chroms-path $ASSEMBLY_PATH \
+  --output results/scaffolding/parsed.pairsam.gz \
+  results/scaffolding/aligned.bam
 
 pairtools sort \
-    --nproc 16 \
-    --output sorted.pairsam.gz \
-    parsed.pairsam.gz
-
-rm parsed.pairsam.gz
+  --nproc 16 \
+  --output results/scaffolding/sorted.pairsam.gz \
+  results/scaffolding/parsed.pairsam.gz
 
 pairtools dedup \
-    --mark-dups \
-    --output-stats pairtools_stats.txt \
-    --output dedup.pairsam.gz \
-    sorted.pairsam.gz
-
-rm sorted.pairsam.gz
+  --mark-dups \
+  --output-stats results/scaffolding/pairtools_stats.txt \
+  --output results/scaffolding/dedup.pairsam.gz \
+  results/scaffolding/sorted.pairsam.gz
 
 pairtools split \
-    --output-pairs mapped.pairs \
-    --output-sam unsorted.pairsam \
-    dedup.pairsam
+  --output-pairs results/scaffolding/mapped.pairs \
+  --output-sam results/scaffolding/unsorted.pairsam \
+  results/scaffolding/dedup.pairsam.gz
 
-rm dedup.pairsam
-
-samtools sort -@ 16 -o mapped_pairtools.bam $TMPDIR/unsorted.parsam
-
-cd -
-
-mkdir -p results/scaffolding
-cp $TMPDIR/mapped_pairtools.bam results/scaffolding/
-cp $TMPDIR/pairtools_stats.txt results/scaffolding/
+samtools sort \
+  -@ 16 \
+  -o results/scaffolding/mapped_pairtools.bam \
+  results/scaffolding/unsorted.pairsam
