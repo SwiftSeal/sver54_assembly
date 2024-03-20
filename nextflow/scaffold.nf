@@ -17,7 +17,7 @@ process SamtoolsFaidx {
 process BwaIndex {
     container 'https://depot.galaxyproject.org/singularity/bwa:0.7.16--pl5.22.0_0'
     cpus 1
-    memory '4 GB'
+    memory '2 GB'
     time '1h'
     input:
     path assembly
@@ -33,7 +33,7 @@ process BwaIndex {
 process BwaMem {
     container 'https://depot.galaxyproject.org/singularity/bwa:0.7.16--pl5.22.0_0'
     cpus 32
-    memory '64 GB'
+    memory '18 GB'
     time '24h'
     input:
     path(index)
