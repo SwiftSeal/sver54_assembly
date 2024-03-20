@@ -95,7 +95,7 @@ process PairtoolsSort {
 }
 
 process PairtoolsDeduplicate {
-    publishDir 'scaffolding'
+    publishDir 'scaffolding', mode: 'copy'
     container 'https://depot.galaxyproject.org/singularity/pairtools:1.0.3--py39h9e08559_0'
     cpus 8
     memory '16 GB'
@@ -178,6 +178,8 @@ process JuicerPre {
     path agp
     path assembly
     output:
+    path 'juicer.txt'
+    path 'juicer.log'
     script:
     """
     $APPS/yahs/juicer pre -a -o juicer $bin $agp $assembly.fai > juicer.log 2>&1
@@ -185,7 +187,7 @@ process JuicerPre {
 }
 
 process JuicerTools {
-    publishDir 'scaffolding'
+    publishDir 'scaffolding', mode: 'copy'
     cpus 12
     memory '32 GB'
     time '6h'
@@ -204,7 +206,8 @@ process JuicerTools {
 }
 
 workflow {
-    index = BwaIndex(Channel.fromPath(params.assembly))
+    assembly = file(params.assembly)
+    index = BwaIndex(assembly)
     aligned_reads = BwaMem(
         index,
         Channel.fromPath(params.R1_1),
@@ -212,4 +215,12 @@ workflow {
         Channel.fromPath(params.R2_1),
         Channel.fromPath(params.R2_2)
     )
+    parsed = PairtoolsParse(assembly, aligned_reads)
+    sorted = PairtoolsSort(parsed)
+    dedup, dedup_stats = PairtoolsDeduplicate(sorted)
+    unsorted, mapped = PairtoolsSplit(dedup)
+    sorted_bam = SamtoolsSort(unsorted)
+    yahs_scaffolds, yahs_agp, yahs_bin = yahs(sorted_bam, assembly)
+    juicer_txt, juicer_log = JuicerPre(yahs_bin, yahs_agp, assembly)
+    juicer_hic = JuicerTools(juicer_txt, juicer_log)
 }
