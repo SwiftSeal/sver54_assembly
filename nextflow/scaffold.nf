@@ -219,7 +219,7 @@ workflow {
     parsed = PairtoolsParse(assembly, aligned_reads)
     sorted = PairtoolsSort(parsed)
     (dedup, dedup_stats) = PairtoolsDeduplicate(sorted)
-    unsorted, mapped = PairtoolsSplit(dedup)
+    (unsorted, mapped) = PairtoolsSplit(dedup)
     sorted_bam = SamtoolsSort(unsorted)
     (yahs_scaffolds, yahs_agp, yahs_bin) = yahs(sorted_bam, assembly, fai)
     (juicer_txt, juicer_log) = JuicerPre(yahs_bin, yahs_agp, assembly)
