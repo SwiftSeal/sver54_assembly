@@ -1,7 +1,5 @@
-params.hifi_reads =
-params.nanopore_reads =
-
 process Hifiasm {
+    publishDir 'hifiasm/'
     container 'https://depot.galaxyproject.org/singularity/hifiasm:0.19.8--h43eeafb_0'
     cpus 32
     memory '64GB'
@@ -18,6 +16,7 @@ process Hifiasm {
 }
 
 process Flye {
+    publishDir './'
     container
     cpus 16
     memory '32GB'

@@ -27,31 +27,31 @@ bwa-mem2 mem \
   -t 16 \
   $ASSEMBLY_PATH \
   <(zcat $R1_1 $R1_2) <(zcat $R2_1 $R2_2) \
-  | samtools sort -o results/scaffolding/aligned.bam
+  -o results/scaffolding/aligned.sam
 
 pairtools parse \
   --min-mapq 40 \
   --walks-policy 5unique \
   --max-inter-align-gap 30 \
   --chroms-path $ASSEMBLY_PATH \
-  --output results/scaffolding/parsed.pairsam.gz \
-  results/scaffolding/aligned.bam
+  --output results/scaffolding/parsed.pairsam \
+  results/scaffolding/aligned.sam
 
 pairtools sort \
   --nproc 16 \
-  --output results/scaffolding/sorted.pairsam.gz \
-  results/scaffolding/parsed.pairsam.gz
+  --output results/scaffolding/sorted.pairsam \
+  results/scaffolding/parsed.pairsam
 
 pairtools dedup \
   --mark-dups \
   --output-stats results/scaffolding/pairtools_stats.txt \
-  --output results/scaffolding/dedup.pairsam.gz \
-  results/scaffolding/sorted.pairsam.gz
+  --output results/scaffolding/dedup.pairsam \
+  results/scaffolding/sorted.pairsam
 
 pairtools split \
   --output-pairs results/scaffolding/mapped.pairs \
   --output-sam results/scaffolding/unsorted.pairsam \
-  results/scaffolding/dedup.pairsam.gz
+  results/scaffolding/dedup.pairsam
 
 samtools sort \
   -@ 16 \

@@ -6,11 +6,10 @@ process SamtoolsFaidx {
     input:
     path assembly
     output:
-    path *.fa
-    path *.fai
+    path ${assembly}.fai
     script:
     """
-    samtools faidx $input
+    samtools faidx $assembly
     """
 }
 
@@ -159,6 +158,7 @@ process yahs {
     input:
     path bam
     path assembly
+    path faidx
     output:
     path 'yahs_scaffolds_final.fa'
     path 'yahs_scaffolds_final.agp'
@@ -208,6 +208,7 @@ process JuicerTools {
 workflow {
     assembly = file(params.assembly)
     index = BwaIndex(assembly)
+    fai = SamtoolsFaidx(assembly)
     aligned_reads = BwaMem(
         index,
         Channel.fromPath(params.R1_1),
@@ -217,10 +218,10 @@ workflow {
     )
     parsed = PairtoolsParse(assembly, aligned_reads)
     sorted = PairtoolsSort(parsed)
-    dedup, dedup_stats = PairtoolsDeduplicate(sorted)
+    (dedup, dedup_stats) = PairtoolsDeduplicate(sorted)
     unsorted, mapped = PairtoolsSplit(dedup)
     sorted_bam = SamtoolsSort(unsorted)
-    yahs_scaffolds, yahs_agp, yahs_bin = yahs(sorted_bam, assembly)
-    juicer_txt, juicer_log = JuicerPre(yahs_bin, yahs_agp, assembly)
+    (yahs_scaffolds, yahs_agp, yahs_bin) = yahs(sorted_bam, assembly, fai)
+    (juicer_txt, juicer_log) = JuicerPre(yahs_bin, yahs_agp, assembly)
     juicer_hic = JuicerTools(juicer_txt, juicer_log)
 }
