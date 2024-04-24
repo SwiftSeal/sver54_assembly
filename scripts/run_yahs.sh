@@ -25,7 +25,7 @@ $APPS/yahs/juicer pre \
   results/yahs/yahs.out_scaffolds_final.agp \
   $ASSEMBLY_PATH.fai > results/yahs/out_JBAT.log 2>&1
 
-  java -jar -Xmx32G $APPS/juicer_tools.1.9.9_jcuda.0.8.jar pre \
-    results/yahs/out_JBAT.txt \
-    results/yahs/out_JBAC.hic \
-    <(cat results/yahs/out_JBAT.log | grep PRE_C_SIZE | awk '{print $2" "$3}')
+java -jar -Xmx32G $APPS/juicer_tools.1.9.9_jcuda.0.8.jar pre \
+  results/yahs/out_JBAT.txt \
+  results/yahs/out_JBAC.hic \
+  <(cat results/yahs/out_JBAT.log | grep PRE_C_SIZE | awk '{print $2" "$3}')
