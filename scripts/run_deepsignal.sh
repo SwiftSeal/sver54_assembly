@@ -5,8 +5,8 @@
 #SBATCH --mem=128gb
 #SBATCH --gpus=2
 #SBATCH --export=ALL
-#SBATCH -o logs/guppy.%j.out
-#SBATCH -e logs/guppy.%j.err
+#SBATCH -o logs/deepsignal.%j.out
+#SBATCH -e logs/deepsignal.%j.err
 
 export HDF5_PLUGIN_PATH=/mnt/shared/scratch/msmith/apps/ont-vbz-hdf-plugin-1.0.1-Linux/usr/local/hdf5/lib/plugin
 
