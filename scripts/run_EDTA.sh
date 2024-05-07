@@ -7,7 +7,7 @@
 #SBATCH -o logs/edta.%j.out
 #SBATCH -e logs/edta.%j.err
 
-ASSEMBLY_FASTA="results/final_assembly/final_assembly.fa"
+ASSEMBLY_FASTA="$(realpath results/final_assembly/final_assembly.fa)"
 
 mkdir -p results/edta
 cd $TMPDIR
