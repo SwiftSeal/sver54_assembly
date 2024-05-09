@@ -1,6 +1,6 @@
 #!/bin/bash
 
-#SBATCH -p medium
+#SBATCH -p long
 #SBATCH -c 32
 #SBATCH --mem=64G
 #SBATCH --export=ALL
