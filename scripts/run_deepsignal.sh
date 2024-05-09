@@ -22,9 +22,9 @@ ONT_DIRS=(
 mkdir -p results/deepsignal
 cp results/final_assembly/final_assembly.fa $TMPDIR/genome.fa
 
-source activate tombo
 
 for ONT_DIR in ${ONT_DIRS[@]}; do
+  source activate tombo
   multi_to_single_fast5 \
     -i $ONT_DIR \
     -s $TMPDIR/fast5_single \
@@ -64,6 +64,9 @@ for ONT_DIR in ${ONT_DIRS[@]}; do
     --motifs C \
     --nproc 16 \
     --nproc_gpu 4
+
+    rm -r $TMPDIR/fast5_single
+    source deactivate
 done
 
 cat results/deepsignal/*.tsv > results/deepsignal/mods.tsv
