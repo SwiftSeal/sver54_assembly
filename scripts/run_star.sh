@@ -7,7 +7,7 @@
 #SBATCH -o logs/STAR.%j.out
 #SBATCH -e logs/STAR.%j.err
 
-ASSEMBLY_FASTA="results/genome/solanum_verrucosum.fa"
+ASSEMBLY_FASTA="results/final_assembly/final_assembly.fa"
 RNA_SEQ_DIR="/mnt/shared/projects/jhi/potato/202212_Sver-RNAseq/"
 R1_SUFFIX="_R1_001.fastq.gz"
 R2_SUFFIX="_R2_001.fastq.gz"
@@ -44,6 +44,8 @@ SAMPLES=(
 "Tuber_S32"
 )
 
+mkidr -p results/star
+
 source activate star
 
 STAR \
@@ -63,7 +65,7 @@ for SAMPLE in "${SAMPLES[@]}"; do
     --readFilesIn $R1 $R2 \
     --readFilesCommand gunzip -c \
     --outSAMtype BAM SortedByCoordinate \
-    --outFileNamePrefix "$TMPDIR/${SAMPLE}_" \
+    --outFileNamePrefix "results/star/${SAMPLE}_" \
     --alignIntronMin 60 \
     --alignIntronMax 15000 \
     --alignMatesGapMax 2000 \
@@ -82,11 +84,7 @@ for SAMPLE in "${SAMPLES[@]}"; do
     --alignSJstitchMismatchNmax 0 1 0 0
 done
 
-mkdir -p results/star
-
 samtools merge \
     -@ 16 \
     -o results/star/merged.bam \
-    $TMPDIR/*_Aligned.sortedByCoord.out.bam
-
-mv $TMPDIR/*_Aligned.sortedByCoord.out.bam results/star/
+    results/star/*_Aligned.sortedByCoord.out.bam
