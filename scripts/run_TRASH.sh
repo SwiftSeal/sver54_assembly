@@ -7,7 +7,7 @@
 #SBATCH -o logs/trash.%j.out
 #SBATCH -e logs/trash.%j.err
 
-mkidr -p results/TRASH
+mkdir -p results/TRASH
 
 source activate TRASH
-$APPS/TRASH/TRASH_run.sh results/final_assembly/final_assembly.fa $(realpath results/TRASH) --win 5000 --par 8
+$APPS/TRASH/TRASH_run.sh results/final_assembly/final_assembly.fa $(realpath results/TRASH) --win 5000 -m 4900 --par 8
