@@ -9,6 +9,8 @@
 
 BOWTIE2_BUILD="singularity exec -B /mnt/:/mnt/ docker://quay.io/biocontainers/bowtie2:2.5.3--py39h6fed5c7_1 bowtie2-build"
 BOWTIE2="singularity exec -B /mnt/:/mnt/ docker://quay.io/biocontainers/bowtie2:2.5.3--py39h6fed5c7_1 bowtie2"
+SAMTOOLS="singularity exec -B /mnt/:/mnt/ docker://quay.io/biocontainers/samtools:1.20--h50ea8bc_0 samtools"
+BAMCOVERAGE="singularity exec -B /mnt/:/mnt/ docker://quay.io/biocontainers/deeptools:3.5.5--pyhdfd78af_0 bamCoverage"
 
 mkdir -p results/cenh3
 
