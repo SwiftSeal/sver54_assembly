@@ -10,6 +10,8 @@
 
 AGAT_SP_EXTRACT_SEQUENCES="singularity exec -B /mnt/:/mnt/ docker://quay.io/biocontainers/agat:1.4.0--pl5321hdfd78af_0 agat_sp_extract_sequences.pl"
 
+mkdir -p results/helixer
+
 singularity exec --nv -B /mnt/:/mnt/ "$APPS/helixer-docker_helixer_v0.3.0_cuda_11.2.0-cudnn8.sif" \
   Helixer.py \
   --species solanum_verrucosum \

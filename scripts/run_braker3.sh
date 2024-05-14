@@ -7,8 +7,8 @@
 #SBATCH -o logs/braker3.%j.out
 #SBATCH -e logs/braker3.%j.err
 
-ASSEMBLY_FILE="../solanum_verrucosum/results/genome/solanum_verrucosum.fa"
-MERGED_BAM="../solanum_verrucosum/results/STAR_align/Temperature_stress_4C_Rep3_Aligned.sortedByCoord.out.bam"
+ASSEMBLY_FILE="results/final_assembly/final_assembly.fa"
+MERGED_BAM="results/star/merged.bam"
 
 singularity exec -B /mnt/:/mnt/ $APPS/braker/braker3.sif braker.pl \
   --AUGUSTUS_CONFIG_PATH=$APPS/braker/Augustus/config/ \
