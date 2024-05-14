@@ -16,6 +16,6 @@ mkdir -p results/cenh3
 
 $BOWTIE2_BUILD results/final_assembly/final_assembly.fa $TMPDIR/final_assembly
 $BOWTIE2 -p 4 -x $TMPDIR/final_assembly -U data/SRR18548893.fastq.gz -S results/cenh3/aln.sam
-$SAMTOOLS view -b -o results/cenh3/aln.bam results/cenh3/aln.sam
+$SAMTOOLS sort -o results/cenh3/aln.bam results/cenh3/aln.sam
 $SAMTOOLS index results/cenh3/aln.bam
 $BAMCOVERAGE -b results/cenh3/aln.bam -o results/cenh3/aln.bw
