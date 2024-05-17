@@ -7,7 +7,7 @@
 #SBATCH -o logs/cenh3_cov.%j.out
 #SBATCH -e logs/cenh3_cov.%j.err
 
-$BEDTOOLS="singularity exec -B /mnt/:/mnt/ docker://quay.io/biocontainers/bedtools:2.31.1--hf5e1c6e_1 bedtools"
+BEDTOOLS="singularity exec -B /mnt/:/mnt/ docker://quay.io/biocontainers/bedtools:2.31.1--hf5e1c6e_1 bedtools"
 
 $BEDTOOLS coverage \
   -a results/earlgrey/solanum_verrucosum_EarlGrey/solanum_verrucosum_summaryFiles/solanum_verrucosum.filteredRepeats.gff \
