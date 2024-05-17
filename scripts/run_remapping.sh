@@ -1,8 +1,8 @@
 #!/bin/bash
 
 #SBATCH -p short
-#SBATCH -c 4
-#SBATCH --mem=8G
+#SBATCH -c 8
+#SBATCH --mem=4G
 #SBATCH --export=ALL
 #SBATCH -o logs/remapping.%j.out
 #SBATCH -e logs/remapping.%j.err
@@ -13,140 +13,36 @@ $BOWTIE2="singularity exec -B /mnt/:/mnt/ docker://quay.io/biocontainers/bowtie2
 $BOWTIE2_BUILD="singularity exec -B /mnt/:/mnt/ docker://quay.io/biocontainers/bowtie2:2.5.3--py39h6fed5c7_1 bowtie2-build"
 $SAMTOOLS="singularity exec -B /mnt/:/mnt/ docker://quay.io/biocontainers/samtools:1.20--h50ea8bc_0 samtools"
 $VARSCAN="singularity exec -B /mnt/:/mnt/ docker://quay.io/biocontainers/varscan:2.4.6--hdfd78af_0 varscan"
+$BCFTOOLS="singularity exec -B /mnt/:/mnt/ docker://quay.io/biocontainers/bcftools:1.20--h8b25389_0 bcftools"
 
 mkdir -p results/remapping
 
-GENSEQ_PARENT_RESISTANT="-1 data/ERR2222736_1.fastq.gz -2 data/ERR2222736_2.fastq.gz"
-GENSEQ_PARENT_SUSCEPTIBLE="-1 data/ERR2222737_1.fastq.gz -2 data/ERR2222737_2.fastq.gz"
-GENSEQ_BULK_RESISTANT="-1 data/ERR2222738_1.fastq.gz -2 data/ERR2222738_2.fastq.gz"
-GENSEQ_BULK_SUSCEPTIBLE="-1 data/ERR2222739_1.fastq.gz -2 data/ERR2222739_2.fastq.gz"
+GENSEQ_PARENT_RESISTANT="ERR2222736"
+GENSEQ_PARENT_SUSCEPTIBLE="ERR2222737"
+GENSEQ_BULK_RESISTANT="ERR2222738"
+GENSEQ_BULK_SUSCEPTIBLE="ERR2222739"
+RENSEQ_PARENT_RESISTANT="ERR2222741"
+RENSEQ_PARENT_SUSCEPTIBLE="ERR222274"
+RENSEQ_BULK_RESISTANT="ERR2222744"
+RENSEQ_BULK_SUSCEPTIBLE="ERR2222743"
 
-RENSEQ_PARENT_RESISTANT="-1 data/ERR2222741_1.fastq.gz -2 data/ERR2222741_2.fastq.gz"
-RENSEQ_PARENT_SUSCEPTIBLE="-1 data/ERR2222742_1.fastq.gz -2 data/ERR2222742_2.fastq.gz"
-RENSEQ_BULK_RESISTANT="-1 data/ERR2222744_1.fastq.gz -2 data/ERR2222744_2.fastq.gz"
-RENSEQ_BULK_SUSCEPTIBLE="-1 data/ERR2222743_1.fastq.gz -2 data/ERR2222743_2.fastq.gz"
+SAMPLES=($GENSEQ_PARENT_RESISTANT $GENSEQ_PARENT_SUSCEPTIBLE $GENSEQ_BULK_RESISTANT $GENSEQ_BULK_SUSCEPTIBLE $RENSEQ_PARENT_RESISTANT $RENSEQ_PARENT_SUSCEPTIBLE $RENSEQ_BULK_RESISTANT $RENSEQ_BULK_SUSCEPTIBLE)
 
 $BOWTIE2_BUILD results/final_assembly/final_assembly.fa $TMPDIR/final_assembly
 
-$BOWTIE2 \
-  -p 4 \
-  --score-min L,-0.18,-0.18 \
-  --phred33 \
-  --fr \
-  --maxins 1000 \
-  --very-sensitive \
-  --no-unal \
-  --no-discordant \
-  -x $TMPDIR/final_assembly \
-  $GENSEQ_PARENT_RESISTANT \
-  > results/remapping/genseq_parent_resistant.sam
-
-$BOWTIE2 \
-  -p 4 \
-  --score-min L,-0.18,-0.18 \
-  --phred33 \
-  --fr \
-  --maxins 1000 \
-  --very-sensitive \
-  --no-unal \
-  --no-discordant \
-  -x $TMPDIR/final_assembly \
-  $GENSEQ_PARENT_SUSCEPTIBLE \
-  > results/remapping/genseq_parent_susceptible.sam
-
-$BOWTIE2 \
-  -p 4 \
-  --score-min L,-0.18,-0.18 \
-  --phred33 \
-  --fr \
-  --maxins 1000 \
-  --very-sensitive \
-  --no-unal \
-  --no-discordant \
-  -x $TMPDIR/final_assembly \
-  $GENSEQ_BULK_RESISTANT \
-  > results/remapping/genseq_bulk_resistant.sam
-
-$BOWTIE2 \
-  -p 4 \
-  --score-min L,-0.18,-0.18 \
-  --phred33 \
-  --fr \
-  --maxins 1000 \
-  --very-sensitive \
-  --no-unal \
-  --no-discordant \
-  -x $TMPDIR/final_assembly \
-  $GENSEQ_BULK_SUSCEPTIBLE \
-  > results/remapping/genseq_bulk_susceptible.sam
-
-$BOWTIE2 \
-  -p 4 \
-  --score-min L,-0.18,-0.18 \
-  --phred33 \
-  --fr \
-  --maxins 1000 \
-  --very-sensitive \
-  --no-unal \
-  --no-discordant \
-  -x $TMPDIR/final_assembly \
-  $RENSEQ_PARENT_RESISTANT \
-  > results/remapping/renseq_parent_resistant.sam
-
-$BOWTIE2 \
-  -p 4 \
-  --score-min L,-0.18,-0.18 \
-  --phred33 \
-  --fr \
-  --maxins 1000 \
-  --very-sensitive \
-  --no-unal \
-  --no-discordant \
-  -x $TMPDIR/final_assembly \
-  $RENSEQ_PARENT_SUSCEPTIBLE \
-  > results/remapping/renseq_parent_susceptible.sam
-
-$BOWTIE2 \
-  -p 4 \
-  --score-min L,-0.18,-0.18 \
-  --phred33 \
-  --fr \
-  --maxins 1000 \
-  --very-sensitive \
-  --no-unal \
-  --no-discordant \
-  -x $TMPDIR/final_assembly \
-  $RENSEQ_BULK_RESISTANT \
-  > results/remapping/renseq_bulk_resistant.sam
-
-$BOWTIE2 \
-  -p 4 \
-  --score-min L,-0.18,-0.18 \
-  --phred33 \
-  --fr \
-  --maxins 1000 \
-  --very-sensitive \
-  --no-unal \
-  --no-discordant \
-  -x $TMPDIR/final_assembly \
-  $RENSEQ_BULK_SUSCEPTIBLE \
-  > results/remapping/renseq_bulk_susceptible.sam
-
-$SAMTOOLS sort -@ 4 -o results/remapping/genseq_parent_resistant.bam results/remapping/genseq_parent_resistant.sam
-$SAMTOOLS sort -@ 4 -o results/remapping/genseq_parent_susceptible.bam results/remapping/genseq_parent_susceptible.sam
-$SAMTOOLS sort -@ 4 -o results/remapping/genseq_bulk_resistant.bam results/remapping/genseq_bulk_resistant.sam
-$SAMTOOLS sort -@ 4 -o results/remapping/genseq_bulk_susceptible.bam results/remapping/genseq_bulk_susceptible.sam
-$SAMTOOLS sort -@ 4 -o results/remapping/renseq_parent_resistant.bam results/remapping/renseq_parent_resistant.sam
-$SAMTOOLS sort -@ 4 -o results/remapping/renseq_parent_susceptible.bam results/remapping/renseq_parent_susceptible.sam
-$SAMTOOLS sort -@ 4 -o results/remapping/renseq_bulk_resistant.bam results/remapping/renseq_bulk_resistant.sam
-$SAMTOOLS sort -@ 4 -o results/remapping/renseq_bulk_susceptible.bam results/remapping/renseq_bulk_susceptible.sam
-
-$SAMTOOLS mpileup -f results/final_assembly/final_assembly.fa results/remapping/genseq_parent_resistant.bam results/remapping/genseq_parent_susceptible.bam > results/remapping/genseq_parent.pileup
-$SAMTOOLS mpileup -f results/final_assembly/final_assembly.fa results/remapping/genseq_bulk_resistant.bam results/remapping/genseq_bulk_susceptible.bam > results/remapping/genseq_bulk.pileup
-$SAMTOOLS mpileup -f results/final_assembly/final_assembly.fa results/remapping/renseq_parent_resistant.bam results/remapping/renseq_parent_susceptible.bam > results/remapping/renseq_parent.pileup
-$SAMTOOLS mpileup -f results/final_assembly/final_assembly.fa results/remapping/renseq_bulk_resistant.bam results/remapping/renseq_bulk_susceptible.bam > results/remapping/renseq_bulk.pileup
-
-$VARSCAN mpileup2snp results/remapping/genseq_parent.pileup --output-vcf 1 --strand-filter 0 > results/remapping/genseq_parent_snp.vcf
-$VARSCAN mpileup2snp results/remapping/genseq_bulk.pileup --output-vcf 1 --strand-filter 0 > results/remapping/genseq_bulk_snp.vcf
-$VARSCAN mpileup2snp results/remapping/renseq_parent.pileup --output-vcf 1 --strand-filter 0 > results/remapping/renseq_parent_snp.vcf
-$VARSCAN mpileup2snp results/remapping/renseq_bulk.pileup --output-vcf 1 --strand-filter 0 > results/remapping/renseq_bulk_snp.vcf
+for SAMPLE in ${SAMPLES[@]}; do
+  $BOWTIE2 -p 8 -x $TMPDIR/final_assembly -1 data/${SAMPLE}_1.fastq -2 data/${SAMPLE}_2.fastq -S results/remapping/${SAMPLE}.sam
+  $SAMTOOLS sort -@ 8 -o results/remapping/${SAMPLE}.bam results/remapping/${SAMPLE}.sam
+  $SAMTOOLS mpileup -f results/final_assembly/final_assembly.fa results/remapping/${SAMPLE}.bam > results/remapping/${SAMPLE}.pileup
+  $VARSCAN mpileup2snp results/remapping/${SAMPLE}.pileup --output-vcf 1 --strand-filter 0 > results/remapping/${SAMPLE}.vcf
+  # filter based on expected ratio for each sample
+  if [[ $SAMPLE == *PARENT_RESISTANT* ]]; then
+    $BCFTOOLS filter -i 'AF < 0.1' results/remapping/${SAMPLE}.vcf > results/remapping/${SAMPLE}.filtered.vcf
+  elif [[ $SAMPLE == *PARENT_SUSCEPTIBLE* ]]; then
+    $BCFTOOLS filter -i 'AF > 0.9' results/remapping/${SAMPLE}.vcf > results/remapping/${SAMPLE}.filtered.vcf
+  elif [[ $SAMPLE == *BULK_RESISTANT* ]]; then
+    $BCFTOOLS filter -i 'AF > 40 && AF < 60' results/remapping/${SAMPLE}.vcf > results/remapping/${SAMPLE}.filtered.vcf
+  elif [[ $SAMPLE == *BULK_SUSCEPTIBLE* ]]; then
+    $BCFTOOLS filter -i 'AF > 0.9' results/remapping/${SAMPLE}.vcf > results/remapping/${SAMPLE}.filtered.vcf
+  fi
+done
