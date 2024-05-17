@@ -7,7 +7,7 @@
 #SBATCH -o logs/braker3.%j.out
 #SBATCH -e logs/braker3.%j.err
 
-ASSEMBLY_FILE="results/final_assembly/final_assembly.fa"
+ASSEMBLY_FILE="results/final_assembly/final_assembly.fa.new.masked"
 MERGED_BAM="results/star/merged.bam"
 
 singularity exec -B /mnt/:/mnt/ $APPS/braker/braker3.sif braker.pl \

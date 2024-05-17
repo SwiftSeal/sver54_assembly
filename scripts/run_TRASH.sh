@@ -10,4 +10,4 @@
 mkdir -p results/TRASH
 
 source activate TRASH
-$APPS/TRASH/TRASH_run.sh results/final_assembly/final_assembly.fa $(realpath results/TRASH) --win 5000 -m 4900 --par 8
+$APPS/TRASH/TRASH_run.sh results/final_assembly/final_assembly.fa $(realpath results/TRASH) --win 10000 --m 9000 --par 8
