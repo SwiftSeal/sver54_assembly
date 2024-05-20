@@ -7,7 +7,7 @@
 #SBATCH -o logs/busco.%j.out
 #SBATCH -e logs/busco.%j.err
 
-BUSCO="singularity exec docker://ezlabgva/busco:v5.7.0_cv1 busco"
+BUSCO="singularity exec -B /mnt/:/mnt/ docker://ezlabgva/busco:v5.7.0_cv1 busco"
 
 $BUSCO \
   -c 8 \
@@ -22,5 +22,5 @@ $BUSCO \
   -i results/helixer/helixer.pep.fa \
   -o helixer \
   --out_path results/busco \
-  -m geno \
+  -m prot \
   -l viridiplantae_odb10
