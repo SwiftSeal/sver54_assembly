@@ -8,7 +8,7 @@
 #SBATCH -e logs/salmon.%j.err
 
 ASSEMBLY_FASTA="results/final_assembly/final_assembly.fa"
-CDS="results/braker/braker.cds.fa"
+CDS="results/final_annotation/final_annotation.cds.fa"
 RNA_SEQ_DIR="/mnt/shared/projects/jhi/potato/202212_Sver-RNAseq/"
 SAMPLES=(
 "0hr_Pinf_infection_Rep1_S11"
