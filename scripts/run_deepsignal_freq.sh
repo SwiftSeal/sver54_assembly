@@ -7,6 +7,8 @@
 #SBATCH -o logs/deepsignal_freq.%j.out
 #SBATCH -e logs/deepsignal_freq.%j.err
 
+source activate deepsignal
+
 cat results/deepsignal/* > $TMPDIR/mods.tsv
 
 deepsignal_plant call_freq \
