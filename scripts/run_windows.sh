@@ -12,8 +12,8 @@ SAMTOOLS="singularity exec -B /mnt/:/mnt/ https://depot.galaxyproject.org/singul
 BEDTOOLS="singularity exec -B /mnt/:/mnt/ docker://quay.io/biocontainers/bedtools:2.31.1--hf5e1c6e_1 bedtools"
 
 ASSEMBLY_FASTA="results/final_assembly/final_assembly.fa"
-GENE_BED="results/final_annotation/final_annotation.longest.gene.bed"
-EARLGREY_GFF="results/earlgrey/solanum_verrucosum_EarlGrey/solanum_verrucpsum_summaryFiles/solanum_verrucosum.filteredRepeats.gff"
+GENE_BED="results/final_annotation/final_annotation.longest.bed"
+EARLGREY_GFF="results/earlgrey/solanum_verrucosum_EarlGrey/solanum_verrucosum_summaryFiles/solanum_verrucosum.filteredRepeats.gff"
 
 # get chromosome sizes file
 $SAMTOOLS faidx "$ASSEMBLY_FASTA"
@@ -65,7 +65,7 @@ for feature in "${!features[@]}"; do
         echo -e "$col1\t$col4\t$col5" >> "$TMPDIR/${feature}.bed"
       fi
     done
-  done < "$EDTA_GFF"
+  done < "$EARLGREY_GFF"
 done
 
 $BEDTOOLS coverage \
