@@ -7,41 +7,42 @@
 #SBATCH -o logs/windows.%j.out
 #SBATCH -e logs/windows.%j.err
 
-BASE_DIR="/mnt/shared/scratch/msmith/solanum_verrucosum"
-ASSEMBLY_FASTA="$BASE_DIR/results/genome/solanum_verrucosum.fa"
-GENE_BED="$BASE_DIR/results/genes/solanum_verrucosum.bed"
-EDTA_GFF="$BASE_DIR/results/edta/solanum_verrucosum.fa.mod.EDTA.TEanno.gff3"
+MULTIBIGWIGSUMMARY="singularity exec -B /mnt/:/mnt/ docker://quay.io/biocontainers/deeptools:3.5.5--pyhdfd78af_0 multiBigwigSummary"
+SAMTOOLS="singularity exec -B /mnt/:/mnt/ https://depot.galaxyproject.org/singularity/samtools:1.19.1--h50ea8bc_0 samtools"
+BEDTOOLS="singularity exec -B /mnt/:/mnt/ docker://quay.io/biocontainers/bedtools:2.31.1--hf5e1c6e_1 bedtools"
 
-source activate windows
+ASSEMBLY_FASTA="results/final_assembly/final_assembly.fa"
+GENE_BED="results/final_annotation/final_annotation.longest.gene.bed"
+EARLGREY_GFF="results/earlgrey/solanum_verrucosum_EarlGrey/solanum_verrucpsum_summaryFiles/solanum_verrucosum.filteredRepeats.gff"
 
 # get chromosome sizes file
-samtools faidx "$ASSEMBLY_FASTA"
+$SAMTOOLS faidx "$ASSEMBLY_FASTA"
 cut -f1,2 "$ASSEMBLY_FASTA.fai" > "$TMPDIR/chrom.sizes"
 
 # make 1mb windows
-bedtools makewindows \
+$BEDTOOLS makewindows \
   -g "$TMPDIR/chrom.sizes" \
   -w 1000000 \
   > "$TMPDIR/windows_1mb.bed"
 
 # calculate methylation coverage
-multiBigwigSummary BED-file \
-  -b \
-    "/mnt/shared/scratch/msmith/solanum_verrucosum/results/deepsignal/freq.CG.bw" \
-    "/mnt/shared/scratch/msmith/solanum_verrucosum/results/deepsignal/freq.CHG.bw" \
-    "/mnt/shared/scratch/msmith/solanum_verrucosum/results/deepsignal/freq.CHH.bw" \
-  --BED "$TMPDIR/windows_1mb.bed" \
-  -out results/windows/methylation.npz \
-  --outRaw results/windows/methylation.tab
+#$MULTIBIGWIGSUMMARY BED-file \
+#  -b \
+#    "/mnt/shared/scratch/msmith/solanum_verrucosum/results/deepsignal/freq.CG.bw" \
+#    "/mnt/shared/scratch/msmith/solanum_verrucosum/results/deepsignal/freq.CHG.bw" \
+#    "/mnt/shared/scratch/msmith/solanum_verrucosum/results/deepsignal/freq.CHH.bw" \
+#  --BED "$TMPDIR/windows_1mb.bed" \
+#  -out results/windows/methylation.npz \
+#  --outRaw results/windows/methylation.tab
 
 # calculate gc content
-bedtools nuc \
+$BEDTOOLS nuc \
   -fi "$ASSEMBLY_FASTA" \
   -bed "$TMPDIR/windows_1mb.bed" \
   > results/windows/gc.bed
 
 # calculate gene coverage
-bedtools coverage \
+$BEDTOOLS coverage \
   -a "$TMPDIR/windows_1mb.bed" \
   -b "$GENE_BED" \
   > results/windows/genes.bed
@@ -49,10 +50,9 @@ bedtools coverage \
 # calculate TE coverage
 
 declare -A features=(
-  ["copia"]="Copia_LTR_retrotransposon"
-  ["gypsy"]="Gypsy_LTR_retrotransposon"
-  ["helitron"]="helitron"
-  ["tir"]="hAT_TIR_transposon Mutator_TIR_transposon PIF_Harbinger_TIR_transposon Tc1_Mariner_TIR_transposon CACTA_TIR_transposon"
+  ["Ty1"]="LTR/Copia"
+  ["Ty3"]="LTR/Gypse"
+  ["Helitron"]="RC/Helitron"
 )
 
 for feature in "${!features[@]}"; do
@@ -68,22 +68,17 @@ for feature in "${!features[@]}"; do
   done < "$EDTA_GFF"
 done
 
-bedtools coverage \
+$BEDTOOLS coverage \
   -a $TMPDIR/windows_1mb.bed \
-  -b $TMPDIR/copia.bed \
-  > results/windows/copia.bed
+  -b $TMPDIR/Ty1.bed \
+  > results/windows/Ty1.bed
 
-bedtools coverage \
+$BEDTOOLS coverage \
   -a $TMPDIR/windows_1mb.bed \
-  -b $TMPDIR/gypsy.bed \
-  > results/windows/gypsy.bed
+  -b $TMPDIR/Ty3.bed \
+  > results/windows/Ty3.bed
 
-bedtools coverage \
+$BEDTOOLS coverage \
   -a $TMPDIR/windows_1mb.bed \
-  -b $TMPDIR/helitron.bed \
-  > results/windows/helitron.bed
-
-bedtools coverage \
-  -a $TMPDIR/windows_1mb.bed \
-  -b $TMPDIR/tir.bed \
-  > results/windows/tir.bed
+  -b $TMPDIR/Helitron.bed \
+  > results/windows/Helitron.bed
