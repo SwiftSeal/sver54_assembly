@@ -43,7 +43,7 @@ coverage_earlgrey <- read.table(
   header = TRUE,
   comment.char = "",
   sep = "\t") %>%
-  select(Sequence = name, Coverage = coverage) %>%
+  dplyr::select(Sequence = name, Coverage = coverage) %>%
   mutate(Sequence = tolower(Sequence))
 
 earlgrey <- statistics_earlgrey %>%
@@ -78,7 +78,7 @@ coverage_edta <- read.table(
   "../results/edta/final_assembly.fa.mod.EDTA.TEanno.sum",
   skip = 40,
   nrows = 5951) %>%
-  select(Name = V1, Coverage = V3)
+  dplyr::select(Name = V1, Coverage = V3)
 
 edta <- statistics_edta %>%
   left_join(tesorter_edta, by = join_by("Sequence" == "X.TE")) %>%
@@ -91,6 +91,11 @@ merged <- bind_rows(earlgrey, edta)
 
 # Plot summary statistics ------------------------------------------------------
 
+summary_theme <- theme(
+  panel.grid = element_blank(),
+  panel.background = element_rect(fill = "white", colour = "black")
+)
+
 coverage_barplot <- merged %>%
   group_by(Source, Classification) %>%
   summarise(Coverage = sum(Coverage, na.rm = TRUE)) %>%
@@ -98,7 +103,13 @@ coverage_barplot <- merged %>%
   geom_bar(stat = "identity", position = "dodge") +
   labs(y = "Coverage (bp)") +
   scale_y_continuous(label = label_number(scale_cut = cut_short_scale(), suffix = "bp")) +
-  theme(legend.position = c(0,0)) +
+  summary_theme +
+  theme(
+    legend.position = c(0.95,0.9),
+    axis.text.x = element_blank(),
+    axis.ticks.x = element_blank(),
+    axis.title.x = element_blank()
+  ) +
   scale_fill_manual(values = nice_colours)
 
 length_boxplot <- merged %>%
@@ -107,7 +118,13 @@ length_boxplot <- merged %>%
   geom_boxplot() +
   labs(y = "Length (bp)") +
   scale_y_continuous(label = label_number(scale_cut = cut_short_scale(), suffix = "bp")) +
-  theme(legend.position = "none") +
+  summary_theme +
+  theme(
+    legend.position = "none",
+    axis.text.x = element_blank(),
+    axis.ticks.x = element_blank(),
+    axis.title.x = element_blank()
+  ) +
   scale_fill_manual(values = nice_colours)
 
 count_barplot <- merged %>%
@@ -115,6 +132,7 @@ count_barplot <- merged %>%
   ggplot(aes(x = Classification, fill = Source)) +
   geom_bar(position = "dodge") +
   labs(y = "Families (#)") +
+  summary_theme +
   theme(legend.position = "none") +
   scale_fill_manual(values = nice_colours)
 
@@ -122,12 +140,22 @@ summary_plot <- plot_grid(
   coverage_barplot,
   length_boxplot,
   count_barplot,
-  align = "hv",
+  align = "v",
   ncol = 1)
 
-summary_plot
+ggsave("te_summary.pdf", summary_plot, width = 4, height = 5, units = "in")
 
 # Some numbers for the paper ---------------------------------------------------
+
+statistics_earlgrey %>%
+  group_by(Classification, Subclass) %>%
+  summarise(count = n()) %>%
+  View()
+
+tesorter_earlgrey %>%
+  group_by(Superfamily, Clade) %>%
+  summarise(count = n()) %>%
+  View()
 
 # How many TEs could not be classified by TEsorter?
 merged %>%
@@ -150,16 +178,26 @@ tree <- read.tree("../results/tesorter/earlgrey.cls.pep.RT.aln.parstree")
 tree$tip.label <- str_extract(tree$tip.label, "rnd-\\d+_family-\\d+")
 
 earlgrey_named <- earlgrey %>%
-  select(Name:Coverage)
+  dplyr::select(Name:Coverage)
 
 earlgrey_named %>%
   group_by(Clade) %>%
   summarise(total = sum(Coverage, na.rm = TRUE)) %>% View()
 
-tree_plot <- ggtree(tree, layout = "daylight") %<+% earlgrey_named
+tesorter_tree <- ggtree(tree, layout = "daylight") %<+% earlgrey_named
 tree_plot %>%
-  groupClade(.node = 21) + aes(colour = group)
+  groupClade(c(408, 521, 599)) + aes(colour = group) + scale_colour_manual(values = nice_colours)
 tree_plot <- tree_plot +
   geom_text(aes(label=node)) +
   geom_tippoint(aes(colour = Superfamily))
 ggsave("tree_plot.pdf", plot = tree_plot, width = 20, height = 20, units = "in")
+
+# CENH3 ------------------------------------------------------------------------
+
+cenh3_coverage <- read.table(
+  "../results/cenh3/cenh3_te_coverage_mean.tsv",
+  header = TRUE) %>%
+  mutate(element = tolower(element))
+
+earlgrey <- earlgrey %>%
+  left_join(cenh3_coverage, by = join_by("Name" == "element"))

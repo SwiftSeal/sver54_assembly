@@ -26,14 +26,14 @@ $BEDTOOLS makewindows \
   > "$TMPDIR/windows_1mb.bed"
 
 # calculate methylation coverage
-#$MULTIBIGWIGSUMMARY BED-file \
-#  -b \
-#    "/mnt/shared/scratch/msmith/solanum_verrucosum/results/deepsignal/freq.CG.bw" \
-#    "/mnt/shared/scratch/msmith/solanum_verrucosum/results/deepsignal/freq.CHG.bw" \
-#    "/mnt/shared/scratch/msmith/solanum_verrucosum/results/deepsignal/freq.CHH.bw" \
-#  --BED "$TMPDIR/windows_1mb.bed" \
-#  -out results/windows/methylation.npz \
-#  --outRaw results/windows/methylation.tab
+$MULTIBIGWIGSUMMARY BED-file \
+  -b \
+    "results/deepsignal/freq.CG.bw" \
+    "results/deepsignal/freq.CHG.bw" \
+    "results/deepsignal/freq.CHH.bw" \
+  --BED "$TMPDIR/windows_1mb.bed" \
+  -out results/windows/methylation.npz \
+  --outRaw results/windows/methylation.tab
 
 # calculate gc content
 $BEDTOOLS nuc \
@@ -51,7 +51,7 @@ $BEDTOOLS coverage \
 
 declare -A features=(
   ["Ty1"]="LTR/Copia"
-  ["Ty3"]="LTR/Gypse"
+  ["Ty3"]="LTR/Gypsy"
   ["Helitron"]="RC/Helitron"
 )
 

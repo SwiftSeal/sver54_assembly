@@ -9,11 +9,11 @@
 
 # why write nice code when copy and paste exists
 
-$BOWTIE2="singularity exec -B /mnt/:/mnt/ docker://quay.io/biocontainers/bowtie2:2.5.3--py39h6fed5c7_1 bowtie2"
-$BOWTIE2_BUILD="singularity exec -B /mnt/:/mnt/ docker://quay.io/biocontainers/bowtie2:2.5.3--py39h6fed5c7_1 bowtie2-build"
-$SAMTOOLS="singularity exec -B /mnt/:/mnt/ docker://quay.io/biocontainers/samtools:1.20--h50ea8bc_0 samtools"
-$VARSCAN="singularity exec -B /mnt/:/mnt/ docker://quay.io/biocontainers/varscan:2.4.6--hdfd78af_0 varscan"
-$BCFTOOLS="singularity exec -B /mnt/:/mnt/ docker://quay.io/biocontainers/bcftools:1.20--h8b25389_0 bcftools"
+BOWTIE2="singularity exec -B /mnt/:/mnt/ docker://quay.io/biocontainers/bowtie2:2.5.3--py39h6fed5c7_1 bowtie2"
+BOWTIE2_BUILD="singularity exec -B /mnt/:/mnt/ docker://quay.io/biocontainers/bowtie2:2.5.3--py39h6fed5c7_1 bowtie2-build"
+SAMTOOLS="singularity exec -B /mnt/:/mnt/ docker://quay.io/biocontainers/samtools:1.20--h50ea8bc_0 samtools"
+VARSCAN="singularity exec -B /mnt/:/mnt/ docker://quay.io/biocontainers/varscan:2.4.6--hdfd78af_0 varscan"
+BCFTOOLS="singularity exec -B /mnt/:/mnt/ docker://quay.io/biocontainers/bcftools:1.20--h8b25389_0 bcftools"
 
 mkdir -p results/remapping
 
@@ -41,8 +41,19 @@ for SAMPLE in ${SAMPLES[@]}; do
   elif [[ $SAMPLE == *PARENT_SUSCEPTIBLE* ]]; then
     $BCFTOOLS filter -i 'AF > 0.9' results/remapping/${SAMPLE}.vcf > results/remapping/${SAMPLE}.filtered.vcf
   elif [[ $SAMPLE == *BULK_RESISTANT* ]]; then
-    $BCFTOOLS filter -i 'AF > 40 && AF < 60' results/remapping/${SAMPLE}.vcf > results/remapping/${SAMPLE}.filtered.vcf
+    $BCFTOOLS filter -i 'AF > 0.4 & AF < 0.6' results/remapping/${SAMPLE}.vcf > results/remapping/${SAMPLE}.filtered.vcf
   elif [[ $SAMPLE == *BULK_SUSCEPTIBLE* ]]; then
     $BCFTOOLS filter -i 'AF > 0.9' results/remapping/${SAMPLE}.vcf > results/remapping/${SAMPLE}.filtered.vcf
   fi
 done
+
+$BCFTOOLS filter -i 'AF > 0.9' results/remapping/${GENSEQ_PARENT_SUSCEPTIBLE}.vcf > results/remapping/${GENSEQ_PARENT_SUSCEPTIBLE}.filtered.vcf
+$BCFTOOLS filter -i 'AF < 0.1' results/remapping/${GENSEQ_PARENT_RESISTANT}.vcf > results/remapping/${GENSEQ_PARENT_RESISTANT}.filtered.vcf
+$BCFTOOLS filter -i 'AF > 0.9' results/remapping/${RENSEQ_PARENT_SUSCEPTIBLE}.vcf > results/remapping/${RENSEQ_PARENT_SUSCEPTIBLE}.filtered.vcf
+$BCFTOOLS filter -i 'AF < 0.1' results/remapping/${RENSEQ_PARENT_RESISTANT}.vcf > results/remapping/${RENSEQ_PARENT_RESISTANT}.filtered.vcf
+$BCFTOOLS filter -i 'AF > 0.4 & AF < 0.6' results/remapping/${GENSEQ_BULK_RESISTANT}.vcf > results/remapping/${GENSEQ_BULK_RESISTANT}.filtered.vcf
+$BCFTOOLS filter -i 'AF > 0.9' results/remapping/${GENSEQ_BULK_SUSCEPTIBLE}.vcf > results/remapping/${GENSEQ_BULK_SUSCEPTIBLE}.filtered.vcf
+$BCFTOOLS filter -i 'AF > 0.4 & AF < 0.6' results/remapping/${RENSEQ_BULK_RESISTANT}.vcf > results/remapping/${RENSEQ_BULK_RESISTANT}.filtered.vcf
+$BCFTOOLS filter -i 'AF > 0.9' results/remapping/${RENSEQ_BULK_SUSCEPTIBLE}.vcf > results/remapping/${RENSEQ_BULK_SUSCEPTIBLE}.filtered.vcf
+
+bedtools intersect -A results/remapping/${RENSEQ_PARENT_SUSCEPTIBLE}.vcf

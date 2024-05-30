@@ -9,6 +9,7 @@ library(readr)
 library(limma)
 library(edgeR)
 library(tximport)
+library(topGO)
 
 # Import data ------------------------------------------------------------------
 
@@ -16,25 +17,61 @@ library(tximport)
 metadata <- read.table("../config/rna_seq_samples.tsv", header = TRUE)
 
 # Get transcript to gene relationship table from gff file
+# Helixer inserted genes are mRNA, BRAKER3 or transcript
 transcript_to_gene <- read.table(
-  "../results/solanum_verrucosum.gtf",
+  "../results/final_annotation/final_annotation.gff",
   skip = 2,
   sep = "\t"
   ) %>%
-  filter(V3 == "transcript") %>%
+  filter(V3 == "transcript" | V3 == "mRNA") %>%
   mutate(
-    gene = str_extract(V9, "gene_id (\\w+);", group = 1),
-    transcript = str_extract(V9, "transcript_id ([^;]+);", group = 1)
+    gene = str_extract(V9, "Parent=([^;]+)", group = 1),
+    transcript = str_extract(V9, "ID=([^;]+);", group = 1)
   ) %>%
-  select(c(transcript, gene))
+  dplyr::select(c(transcript, gene)) %>%
+  filter(!str_detect(transcript, "agat"))
   
 # Salmon quantification files
+sample_filepaths <- list.files("../results/salmon/")
+
 salmon_quantification <- tximport(
-  file.path("../results/salmon/quant", metadata$sample, "quant.sf"),
+  file.path("../results/salmon/", sample_filepaths, "quant.sf"),
   type = "salmon",
   tx2gene = transcript_to_gene,
   countsFromAbundance = "lengthScaledTPM"
 )
+
+# Save tpm values from salmon prior to filtering
+
+tpm <- as.data.frame(salmon_quantification$counts)
+colnames(tpm) <- sample_filepaths
+tpm <- tpm %>%
+  rownames_to_column(var = "gene") %>%
+  pivot_longer(!gene,, names_to = "sample", values_to = "tpm") %>%
+  mutate(condition = str_extract(sample, "^(.*)_Rep.*$", group = 1)) %>%
+  group_by(gene, condition) %>%
+  summarise(tpm = mean(tpm))
+write.table(tpm, file = "../results/tpm.tsv")
+
+# To be honest I have no idea wtf this is
+# Retain GO ontology hit for highest scoring isoform
+go_terms <- read.table(
+  "../results/eggnog/eggnog.emapper.annotations",
+  skip = 5,
+  sep = "\t",
+  fill = TRUE
+  ) %>%
+  mutate(gene = gsub(".t\\d", "", V1)) %>%
+  group_by(gene) %>%
+  filter(V4 == max(V4)) %>%
+  dplyr::select(gene, V10)
+
+go_terms <- as.data.frame(go_terms)
+
+map <- go_terms[,2]
+names(map) <- gsub(" ", "", go_terms[,1])
+geneID2GO <- lapply(map, function(x) gsub(" ", "", strsplit(x, split = ",")[[1]]))
+  
 
 # Analysis ---------------------------------------------------------------------
 
@@ -109,6 +146,8 @@ treats <- map(
     TRUE ~ "not significant"
   ))
 
+write.table(treats, "../results/differential_expression.tsv", row.names = FALSE)
+
 treats_summary <- treats %>%
   group_by(coef, status) %>%
   summarise(n = n())
@@ -122,8 +161,37 @@ lcpm_de_genes <- lcpm %>%
   pivot_wider(names_from = condition, values_from = lcpm) %>%
   column_to_rownames(var = "gene")
 
-png(file = "rnaseq_heatmap.png", width = 4, height = 10, units = "in", res = 300)
-plot <- Heatmap(lcpm_de_genes)
+png(file = "rnaseq_heatmap.png", width = 4, height = 16, units = "in", res = 600)
+plot <- Heatmap(lcpm_de_genes, col = magma(100))
 draw(plot)
 dev.off()
 
+# GO analysis ------------------------------------------------------------------
+
+geneNames <- names(geneID2GO)
+
+myInterestingGenes <- treats %>%
+  filter(coef == "Temperature25vs4") %>%
+  pull(gene)
+
+
+geneList <- factor(as.integer(geneNames %in% myInterestingGenes))
+names(geneList) <- geneNames
+str(geneList)
+
+GOdata <- new(
+  "topGOdata",
+  ontology = "MF",
+  allGenes = geneList,
+  gene2GO = geneID2GO,
+  annot = annFUN.gene2GO,
+  nodeSize = 5
+  )
+
+resultFisher <- runTest(GOdata, algorithim = "classic", statistic = "fisher")
+
+allRes <- GenTable(
+  GOdata,
+  classicFisher = resultFisher
+)
+View(allRes)

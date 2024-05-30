@@ -24,9 +24,17 @@ agat_sp_filter_feature_from_keep_list.pl \
   --keep_list $TMPDIR/helixer_resistify.genes \
   -o $TMPDIR/helixer_nlrs.gff
 
-agat_sp_complement_annotations.pl \
-  --ref results/braker/braker.gff \
-  --add $TMPDIR/helixer_nlrs.gff \
+bedtools intersect -v -a results/helixer/helixer.bed -b results/braker/braker.bed > $TMPDIR/non_intersecting.bed
+awk '{print $4}' $TMPDIR/non_intersecting.bed > $TMPDIR/non_intersecting.genes
+
+agat_sp_filter_feature_from_keep_list.pl \
+  --gff $TMPDIR/helixer_nlrs.gff \
+  --keep_list $TMPDIR/non_intersecting.genes \
+  -o $TMPDIR/helixer_nlrs_non_intersecting.gff
+
+agat_sp_merge_annotations.pl \
+  --gff results/braker.gff \
+  --gff $TMPDIR/helixer_nlrs_non_intersecting.gff \
   -o results/final_annotation/final_annotation.gff
 
 # Extract sequences

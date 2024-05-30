@@ -24,3 +24,19 @@ $BUSCO \
   --out_path results/busco \
   -m prot \
   -l viridiplantae_odb10
+
+$BUSCO \
+  -c 8 \
+  -i results/stringtie/transcripts.fa.transdecoder.pep \
+  -o stringtie \
+  --out_path results/busco \
+  -m prot \
+  -l viridiplantae_odb10
+
+$BUSCO \
+  -c 1 \
+  -i results/final_annotation/final_annotation.pep.fa \
+  -o final \
+  --out_path results/busco \
+  -m prot \
+  -l viridiplantae_odb10
