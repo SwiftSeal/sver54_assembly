@@ -201,3 +201,50 @@ cenh3_coverage <- read.table(
 
 earlgrey <- earlgrey %>%
   left_join(cenh3_coverage, by = join_by("Name" == "element"))
+
+# Methylation ------------------------------------------------------------------
+
+# faster ------
+
+library(data.table)
+library(stringr)
+
+methylation <- fread("../results/deepsignal/te_matrix.fix.tab")
+
+methylation <- methylation[, !c("V1", "V2", "V3", "V5", "V6")]
+
+new_columns <- c(
+  "id",
+  paste0("CG:", 1:600),
+  paste0("CHG:", 1:600),
+  paste0("CHH:", 1:600)
+)
+
+colnames(methylation) <- new_columns
+
+earlgrey_gff <- fread(
+  "../results/earlgrey/solanum_verrucosum_EarlGrey/solanum_verrucosum_summaryFiles/solanum_verrucosum.filteredRepeats.gff"
+)
+earlgrey_gff <- earlgrey_gff[, id := paste0(V1, ":", V4, "-", V5)]
+earlgrey_gff <- earlgrey_gff[, family := str_extract(V9, "ID=([^;]*)", group = 1)]
+earlgrey_gff <- earlgrey_gff[, c("id", "V3", "family")]
+methylation <- methylation[earlgrey_gff, on = .(id)]
+methylation <- melt(methylation, id.vars = c("id", "V3", "family"))
+summarised <- methylation[,.(mean = mean(value, na.rm = TRUE)), .(V3, variable)]
+summarised <- summarised[, c("Type", "Position") := tstrsplit(variable, ":", fixed = TRUE)]
+
+te_plot <- ggplot(summarised, aes(x = as.integer(Position), y = mean, colour = Type)) +
+  geom_line() +
+  facet_wrap(vars(V3), nrow = 6, ncol = 5) +
+  theme(legend.position = "bottom")
+
+ggsave(
+  filename = "../results/te_plot.png",
+  plot = te_plot,
+  width = 5.8,
+  height = 8,
+  units = "in"
+)
+
+methylation <- methylation %>%
+  left_join(earlgrey_gff)

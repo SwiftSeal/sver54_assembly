@@ -94,19 +94,45 @@ experiment_dgelist <- DGEList(
   salmon_quantification$counts,
   group = metadata$condition
 )
+colnames(experiment_dgelist) <- sample_filepaths
 
 # Filter out lowly expressed genes
+
 dim(experiment_dgelist)
 keep <- filterByExpr(experiment_dgelist, design_matrix)
 experiment_dgelist <- experiment_dgelist[keep,]
 dim(experiment_dgelist)
 
 # Normalise the libraries
+png(
+  filename = "../results/rnaseq_counts1.png",
+  width = 300,
+  height = 100,
+  units = "mm",
+  res = 300
+)
 boxplot(cpm(experiment_dgelist, log = TRUE))
+dev.off()
 experiment_dgelist <- normLibSizes(experiment_dgelist, method = "TMM")
+png(
+  filename = "../results/rnaseq_counts2.png",
+  width = 300,
+  height = 100,
+  units = "mm",
+  res = 300
+)
 boxplot(cpm(experiment_dgelist, log = TRUE))
+dev.off()
 
+png(
+  filename = "../../pandoc-thesis/figures/rnaseq_mds.png",
+  width = 150,
+  height = 150,
+  units = "mm",
+  res = 600
+)
 plotMDS(cpm(experiment_dgelist, log = TRUE))
+dev.off()
 
 # Calculate mean lcpm per sample for each gene
 lcpm <- cpm(experiment_dgelist, log = TRUE)
@@ -119,13 +145,29 @@ lcpm <- lcpm %>%
   group_by(gene, condition) %>%
   summarise(lcpm = mean(lcpm))
 
+write.table(
+  lcpm,
+  "../results/lcpm.tsv",
+  row.names = FALSE,
+  sep = "\t"
+)
+
 
 # Remove heteroscedascity
+png(
+  filename = "../../pandoc-thesis/figures/rnaseq_hetero.png",
+  width = 150,
+  height = 100,
+  units = "mm",
+  res = 600
+)
+par(mfrow=c(1,2))
 experiment_voom <- voom(experiment_dgelist, design_matrix, plot = TRUE)
 experiment_voom <- lmFit(experiment_voom, design_matrix)
 experiment_voom <- contrasts.fit(experiment_voom, contrasts = contrast_matrix)
 experiment_voom <- eBayes(experiment_voom)
 plotSA(experiment_voom)
+dev.off()
 
 summary(decideTests(experiment_voom))
 
@@ -146,7 +188,12 @@ treats <- map(
     TRUE ~ "not significant"
   ))
 
-write.table(treats, "../results/differential_expression.tsv", row.names = FALSE)
+write.table(
+  treats,
+  "../results/differential_expression.tsv",
+  row.names = FALSE,
+  sep = "\t",
+)
 
 treats_summary <- treats %>%
   group_by(coef, status) %>%
@@ -168,30 +215,30 @@ dev.off()
 
 # GO analysis ------------------------------------------------------------------
 
-geneNames <- names(geneID2GO)
-
-myInterestingGenes <- treats %>%
-  filter(coef == "Temperature25vs4") %>%
-  pull(gene)
-
-
-geneList <- factor(as.integer(geneNames %in% myInterestingGenes))
-names(geneList) <- geneNames
-str(geneList)
-
-GOdata <- new(
-  "topGOdata",
-  ontology = "MF",
-  allGenes = geneList,
-  gene2GO = geneID2GO,
-  annot = annFUN.gene2GO,
-  nodeSize = 5
-  )
-
-resultFisher <- runTest(GOdata, algorithim = "classic", statistic = "fisher")
-
-allRes <- GenTable(
-  GOdata,
-  classicFisher = resultFisher
-)
-View(allRes)
+#geneNames <- names(geneID2GO)
+#
+#myInterestingGenes <- treats %>%
+#  filter(coef == "Temperature25vs4") %>%
+#  pull(gene)
+#
+#
+#geneList <- factor(as.integer(geneNames %in% myInterestingGenes))
+#names(geneList) <- geneNames
+#str(geneList)
+#
+#GOdata <- new(
+#  "topGOdata",
+#  ontology = "MF",
+#  allGenes = geneList,
+#  gene2GO = geneID2GO,
+#  annot = annFUN.gene2GO,
+#  nodeSize = 5
+#  )
+#
+#resultFisher <- runTest(GOdata, algorithim = "classic", statistic = "fisher")
+#
+#allRes <- GenTable(
+#  GOdata,
+#  classicFisher = resultFisher
+#)
+#View(allRes)

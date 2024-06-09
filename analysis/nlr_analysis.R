@@ -21,7 +21,7 @@ paired_colours = c(
   "TN" = "#fdbf6f", 
   "TNL" = "#ff7f00"
 )
-nice_colours = c("#2596be", "#ff7f0e", "#2ca02c", "#9467bd", "#8c564b", "#e377c2", "#7f7f7f", "#bcbd22", "#17becf")
+nice_colours = c("#2596be", "#ff7f0e", "#2ca02c", "#9467bd", "#8c564b", "#e377c2", "#bcbd22", "#17becf", "#7f7f7f")
 
 # import data ------------------------------------------------------------------
 
@@ -37,6 +37,10 @@ nlr_list <- resistify %>%
   filter(Classification != "None") %>%
   pull(gene)
 
+nlr_list_sequence <- resistify %>%
+  filter(Classification != "None") %>%
+  pull(Sequence)
+
 tpm <- read.table("../results/tpm.tsv") %>%
   mutate(tpm = log2(tpm + 1))
 
@@ -51,18 +55,18 @@ methylation <- read.table(
   comment.char = "@"
 ) %>%
   dplyr::select(!c(V1, V2, V3, V5, V6)) %>%
-  filter(V4 %in% nlr_list)
+  filter(V4 %in% nlr_list_sequence)
 
 colnames(methylation) <- c(
   "gene",
-  paste0("A", 1:600),
-  paste0("B", 1:600),
-  paste0("C", 1:600)
+  paste0("CG:", 1:600),
+  paste0("CHG:", 1:600),
+  paste0("CHH:", 1:600)
 )
 
 methylation <- methylation %>%
   pivot_longer(!gene, names_to = "origin", values_to = "value") %>%
-  separate(origin, into = c("Sample", "Position"), sep = 1)
+  separate(origin, into = c("Sample", "Position"), sep = ":")
 
 summary_methylation <- methylation %>%
   group_by(Sample, Position) %>%
@@ -132,6 +136,7 @@ resistify %>%
   summarise(count = n())
 
 
+
 # Big table for all the main numbers
 
 clean_edta <- edta_overlaps %>%
@@ -158,7 +163,8 @@ big_table <- resistify %>%
   left_join(clean_tpm) %>%
   left_join(low_expression) %>%
   left_join(homologs) %>%
-  ungroup()
+  ungroup() %>%
+  mutate(mean_expression = dplyr::select(., "0hr_Pinf_infection":"Temperature_stress_4C") %>% rowMeans())
 
 ver1_kasp <- read.table("../results/kasp_blast.tsv")
 
@@ -166,13 +172,9 @@ annotation_gff <- read.table("../results/final_annotation/final_annotation.gff")
 
 ## Summarise NLRs --------------------------------------------------------------
 
-resistify %>%
-  filter(Classification != "None") %>%
-  summarise(count = n())
-
-resistify %>%
+big_table %>%
   group_by(Classification) %>%
-  summarise(count = n())
+  summarise(percentage = sum(MADA == "True") / n())
 
 # Plot tree --------------------------------------------------------------------
 
@@ -202,10 +204,14 @@ tree_plot <- gheatmap(
   tree_plot + new_scale_fill(),
   Feature,
   width = 0.1,
-  offset = 1,
+  offset = 0.5,
   color = NA,
   colnames_angle = 90
-)
+) +
+  scale_fill_manual(values = c(
+    "CJID" = nice_colours[7],
+    "MADA" = nice_colours[8]
+  ), na.value = "white")
 
 te_overlap <- big_table %>%
   dplyr::select(Sequence, EDTA_TE, Earlgrey_TE) %>%
@@ -225,26 +231,30 @@ te_overlap <- big_table %>%
 
 # Need to simplify te labels
 
-
 tree_plot <- gheatmap(
   tree_plot + new_scale_fill(),
   te_overlap,
-  offset = 2,
+  offset = 1,
   width = 0.2,
   color = NA,
   colnames_angle = 90
-)
-
-tree_plot <- gheatmap(
-  tree_plot + new_scale_fill(),
-  tpm_matrix,
-  offset = 4,
-  color = NA,
-  colnames_angle = 90
 ) +
-  scale_fill_viridis_c(option = "magma")
+  scale_fill_manual(values = c(
+    "Helitron" = nice_colours[4],
+    "TIR" = nice_colours[5],
+    "LTR" = nice_colours[6]
+  ), na.value = "white")
 
-ggsave("nlr_tree.pdf", tree_plot + ylim(-100, 600), width = 8, height = 6, units = "in")
+#tree_plot <- gheatmap(
+#  tree_plot + new_scale_fill(),
+#  tpm_matrix,
+#  offset = 4,
+#  color = NA,
+#  colnames_angle = 90
+#) +
+#  scale_fill_viridis_c(option = "magma")
+
+ggsave("nlr_tree.pdf", tree_plot + ylim(-100, 600), width = 4, height = 8, units = "in")
 
 # Expression analysis ----------------------------------------------------------
 
@@ -265,8 +275,8 @@ joined %>%
 condition_lm <- summary(lm(tpm ~ condition, data = joined))
 condition_lm
 
-expression_histogram <- joined %>%
-  ggplot(aes(x = tpm, fill = condition)) +
+expression_histogram <- big_table %>%
+  ggplot(aes(x = mean_expression, fill = condition)) +
   geom_histogram() +
   labs(x = "Log2(TPM)", y = "# NLRs") +
   scale_fill_manual(values = nice_colours)
@@ -304,17 +314,21 @@ tree_plot <- ggtree(helixer_tree, layout = "daylight") %<+% helixer_resistify
 tree_plot +
   geom_tippoint(aes(colour = Missing, shape = Overlapping))
 
-# What NLRs overlap with EarlGrey TEs?
+merged <- big_table %>%
+  filter(!is.na(mean_expression)) %>%
+  column_to_rownames("Sequence") %>%
+  mutate(Homologs = replace_na(Homologs, ""))
 
-
-merged <- inner_join(resistify, tpm, relationship = "many-to-many") %>%
-  filter(Classification != "None") %>%
-  dplyr::select(Sequence, condition, tpm) %>%
-  pivot_wider(names_from = "condition", values_from = "tpm") %>%
-  column_to_rownames("Sequence")
-
-ht = draw(Heatmap(merged, km = 20, col = magma(100)))
-pdf("nlr_clustered.pdf", width = 20, height = 20)
+ht = draw(
+  Heatmap(
+    dplyr::select(merged, "0hr_Pinf_infection":"Temperature_stress_4C"),
+    km = 20,
+    col = magma(100),
+    row_labels = merged$Homologs,
+    show_row_names = TRUE
+  )
+)
+pdf("../results/nlr_clustered.pdf", width = 10, height = 40)
 ht
 dev.off()
 
@@ -334,6 +348,10 @@ for (i in 1:length(row_order(ht))) {
     out <- rbind(out, clu)
   }
 }
+
+cooltree <- ggtree(nbarc_tree) %<+% as.data.frame(out)
+cooltree +
+  geom_tippoint(aes(colour = Cluster))
 
 # rpi-ver1 analysis ------------------------------------------------------------
 
@@ -368,6 +386,10 @@ wider_loci_genes <- annotation_gff %>%
   filter(V1 == "chr09", V4 > 51196801, V4 < 58124547) %>%
   mutate(gene = gsub("ID=", "", V9)) %>%
   pull(gene)
+
+resistify %>%
+  filter(gene %in% wider_loci_genes) %>%
+  View()
 
 annotation_gff %>%
   filter(V3 == "gene") %>%
