@@ -132,10 +132,13 @@ resistify %>%
   inner_join(edta_overlaps) %>%
   mutate(intact = str_detect(V18, "method=structural")) %>%
   group_by(TE, intact) %>%
-  View()
   summarise(count = n())
 
-
+resistify %>%
+  filter(Classification != "None") %>%
+  inner_join(edta_overlaps) %>%
+  mutate(intact = str_detect(V18, "method=structural")) %>%
+  View()
 
 # Big table for all the main numbers
 
@@ -178,17 +181,29 @@ big_table %>%
 
 # Plot tree --------------------------------------------------------------------
 
-tree_plot <- ggtree(nbarc_tree) %<+% big_table
+nbarc_tree <- read.tree("../results/resistify/final/all_nbarc.msa.raxml.bestTree")
+nbarc_tree <- ape::root(nbarc_tree, outgroup = "Ced4")
 
-classifications <- big_table %>%
-  dplyr::select(Sequence, Classification) %>%
-  column_to_rownames(var = "Sequence")
+# Remove the domains from the tree labels
+nbarc_tree$tip.label = str_remove(nbarc_tree$tip.label, "_\\d$")
+
+tree_plot <- ggtree(nbarc_tree) %<+% big_table +
+  geom_tiplab(
+    align = TRUE,
+    aes(label = Homologs),
+    offset = 2.2,
+    linetype = "blank",
+    size = 2
+  )
 
 tree_plot <- gheatmap(
   tree_plot,
-  classifications,
+  resistify %>%
+    dplyr::select(Sequence, Classification) %>%
+    column_to_rownames(var = "Sequence"),
   width = 0.1,
-  color = NA) +
+  color = NA,
+  colnames) +
   scale_fill_manual(values = paired_colours)
 
 Feature <- big_table %>%
@@ -202,11 +217,19 @@ Feature <- big_table %>%
 
 tree_plot <- gheatmap(
   tree_plot + new_scale_fill(),
-  Feature,
+  resistify %>%
+    mutate(
+      Feature = case_when(
+        MADA == "True" ~ "MADA",
+        CJID == "True" ~ "CJID"
+      )
+    ) %>%
+    dplyr::select(Sequence, Feature) %>%
+    column_to_rownames(var = "Sequence"),
   width = 0.1,
   offset = 0.5,
   color = NA,
-  colnames_angle = 90
+  colnames = FALSE
 ) +
   scale_fill_manual(values = c(
     "CJID" = nice_colours[7],
@@ -237,7 +260,7 @@ tree_plot <- gheatmap(
   offset = 1,
   width = 0.2,
   color = NA,
-  colnames_angle = 90
+  colnames = FALSE
 ) +
   scale_fill_manual(values = c(
     "Helitron" = nice_colours[4],
@@ -254,7 +277,7 @@ tree_plot <- gheatmap(
 #) +
 #  scale_fill_viridis_c(option = "magma")
 
-ggsave("nlr_tree.pdf", tree_plot + ylim(-100, 600), width = 4, height = 8, units = "in")
+ggsave("nlr_tree.pdf", tree_plot + geom_treescale(), width = 8, height = 8, units = "in")
 
 # Expression analysis ----------------------------------------------------------
 
@@ -282,7 +305,7 @@ expression_histogram <- big_table %>%
   scale_fill_manual(values = nice_colours)
 expression_histogram
 
-# how many are low to unexpressed?
+# how many NLRs are low to unexpressed?
 
 joined %>%
   group_by(Sequence) %>%
@@ -292,7 +315,9 @@ joined %>%
 
 # Is this cus of helixer?
 
-helixer_lm <- summary(lm(tpm ~ helixer, data = joined))
+helixer_lm <- summary(lm(mean_expression ~ helixer, data = big_table))
+
+
 
 helixer_resistify <- helixer_resistify %>%
   mutate(Sequence = gsub("\\.1", "", Sequence)) %>%
@@ -316,19 +341,23 @@ tree_plot +
 
 merged <- big_table %>%
   filter(!is.na(mean_expression)) %>%
-  column_to_rownames("Sequence") %>%
-  mutate(Homologs = replace_na(Homologs, ""))
+  column_to_rownames("Sequence")
+
+homologs_indices <- which(!is.na(merged$Homologs))
+homologs_list <- merged$Homologs[!is.na(merged$Homologs)]
+
+ha = rowAnnotation(foo = anno_mark(at = homologs_indices, labels = homologs_list))
 
 ht = draw(
   Heatmap(
     dplyr::select(merged, "0hr_Pinf_infection":"Temperature_stress_4C"),
     km = 20,
     col = magma(100),
-    row_labels = merged$Homologs,
-    show_row_names = TRUE
+    right_annotation = ha,
+    show_row_names = FALSE,
   )
 )
-pdf("../results/nlr_clustered.pdf", width = 10, height = 40)
+png("../../pandoc-thesis/figures/nlr_clustered_expression.png", width = 10, height = 10, res = 300, units = "in")
 ht
 dev.off()
 

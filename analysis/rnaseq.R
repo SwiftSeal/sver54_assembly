@@ -51,7 +51,7 @@ tpm <- tpm %>%
   mutate(condition = str_extract(sample, "^(.*)_Rep.*$", group = 1)) %>%
   group_by(gene, condition) %>%
   summarise(tpm = mean(tpm))
-write.table(tpm, file = "../results/tpm.tsv")
+write_delim(tpm, file = "../results/tpm.tsv", delim = "\t")
 
 # To be honest I have no idea wtf this is
 # Retain GO ontology hit for highest scoring isoform
