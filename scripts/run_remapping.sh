@@ -57,3 +57,46 @@ $BCFTOOLS filter -i 'AF > 0.4 & AF < 0.6' results/remapping/${RENSEQ_BULK_RESIST
 $BCFTOOLS filter -i 'AF > 0.9' results/remapping/${RENSEQ_BULK_SUSCEPTIBLE}.vcf > results/remapping/${RENSEQ_BULK_SUSCEPTIBLE}.filtered.vcf
 
 bedtools intersect -A results/remapping/${RENSEQ_PARENT_SUSCEPTIBLE}.vcf
+
+RENSEQ_PARENT_RESISTANT="ERR2222741"
+RENSEQ_PARENT_SUSCEPTIBLE="ERR222274"
+RENSEQ_BULK_RESISTANT="ERR2222744"
+RENSEQ_BULK_SUSCEPTIBLE="ERR2222743"
+
+experiment_name: sver54_genseq
+mode: standard
+parent:
+  resistant:
+    name: res_parent
+    R1: ../data/ERR2222736_1.fastq.gz
+    R2: ../data/ERR2222736_2.fastq.gz
+  susceptible:
+    name: sus_parent
+    R1: ../data/ERR2222737_1.fastq.gz
+    R2: ../data/ERR2222737_2.fastq.gz
+bulk:
+  resistant:
+    R1: ../data/ERR2222738_1.fastq.gz
+    R2: ../data/ERR2222738_2.fastq.gz
+  susceptible:
+    R1: ../data/ERR2222739_1.fastq.gz
+    R2: ../data/ERR2222739_2.fastq.gz
+reference:
+  name: ver54
+  fasta: ../results/final_assembly/final_assembly.fa
+allele_frequency:
+  parent:
+    susceptible:
+      min: 95
+      max: 100
+    resistant:
+      min: 0
+      max: 5
+  bulk:
+    susceptible:
+      min: 95
+      max: 100
+    resistant:
+      min: 40
+      max: 60
+bowtie2_args: "--score-min L,-0.18,-0.18 --phred33 --fr --maxins 1000 --very-sensitive --no-unal --no-discordant"

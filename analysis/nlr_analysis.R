@@ -41,44 +41,10 @@ nlr_list_sequence <- resistify %>%
   filter(Classification != "None") %>%
   pull(Sequence)
 
-tpm <- read.table("../results/tpm.tsv") %>%
-  mutate(tpm = log2(tpm + 1))
+lcpm <- read.table("../results/tpm.tsv", header = TRUE) %>%
+  mutate(tpm = log10(tpm + 1))
 
-tpm_matrix <- tpm %>%
-  inner_join(resistify, relationship = "many-to-many") %>%
-  dplyr::select(Sequence, condition, tpm) %>%
-  pivot_wider(names_from = condition, values_from = tpm) %>%
-  column_to_rownames(var = "Sequence")
-
-methylation <- read.table(
-  "../results/deepsignal/gene_matrix.tab",
-  comment.char = "@"
-) %>%
-  dplyr::select(!c(V1, V2, V3, V5, V6)) %>%
-  filter(V4 %in% nlr_list_sequence)
-
-colnames(methylation) <- c(
-  "gene",
-  paste0("CG:", 1:600),
-  paste0("CHG:", 1:600),
-  paste0("CHH:", 1:600)
-)
-
-methylation <- methylation %>%
-  pivot_longer(!gene, names_to = "origin", values_to = "value") %>%
-  separate(origin, into = c("Sample", "Position"), sep = ":")
-
-summary_methylation <- methylation %>%
-  group_by(Sample, Position) %>%
-  summarise(
-    mean = mean(value, na.rm = TRUE),
-    stderr_min = mean(value, na.rm = TRUE) - sd(value, na.rm = TRUE)/sqrt(n()),
-    stderr_max = mean(value, na.rm = TRUE) + sd(value, na.rm = TRUE)/sqrt(n()),
-  )
-
-ggplot(summary_methylation, aes(x = as.numeric(Position), ymin = stderr_min, ymax = stderr_max, fill = Sample)) +
-  geom_line(aes(y = mean)) +
-  geom_ribbon(aes(alpha = 0.5))
+methylation <- read.csv("../results/subfeature_methylation.csv")
 
 homologs <- read.table("../results/refplantnlr_diamond.tsv") %>%
   filter(V3 > 90) %>%
@@ -119,7 +85,6 @@ resistify %>%
   group_by(TE) %>%
   summarise(count = n())
 
-
 resistify %>%
   filter(Classification != "None") %>%
   inner_join(edta_overlaps) %>%
@@ -134,11 +99,11 @@ resistify %>%
   group_by(TE, intact) %>%
   summarise(count = n())
 
-resistify %>%
-  filter(Classification != "None") %>%
-  inner_join(edta_overlaps) %>%
-  mutate(intact = str_detect(V18, "method=structural")) %>%
-  View()
+# Just need the classifications for now
+methylation <- read.csv("../results/subfeature_methylation.csv") %>%
+  mutate(gene = gsub("\\.\\d$", "", gene)) %>%
+  filter(column_3 == "exon") %>%
+  dplyr::select(gene, classification)
 
 # Big table for all the main numbers
 
@@ -148,14 +113,8 @@ clean_edta <- edta_overlaps %>%
 clean_earlgrey <- earlgrey_overlaps %>%
   dplyr::select(Sequence, "Earlgrey_TE" = TE, "Earlgrey_overlap" = proportion)
 
-clean_tpm <- tpm %>%
+clean_lcpm <- lcpm %>%
   pivot_wider(names_from = condition, values_from = tpm)
-
-low_expression <- tpm %>%
-  group_by(gene) %>%
-  summarise(tpm = mean(tpm)) %>%
-  mutate("Low expression" = tpm < 2.5) %>%
-  dplyr::select(gene, "Low expression")
 
 big_table <- resistify %>%
   group_by(gene) %>%
@@ -163,21 +122,11 @@ big_table <- resistify %>%
   filter(Classification != "None") %>%
   left_join(clean_edta) %>%
   left_join(clean_earlgrey) %>%
-  left_join(clean_tpm) %>%
-  left_join(low_expression) %>%
+  left_join(clean_lcpm) %>%
   left_join(homologs) %>%
+  left_join(methylation) %>%
   ungroup() %>%
   mutate(mean_expression = dplyr::select(., "0hr_Pinf_infection":"Temperature_stress_4C") %>% rowMeans())
-
-ver1_kasp <- read.table("../results/kasp_blast.tsv")
-
-annotation_gff <- read.table("../results/final_annotation/final_annotation.gff")
-
-## Summarise NLRs --------------------------------------------------------------
-
-big_table %>%
-  group_by(Classification) %>%
-  summarise(percentage = sum(MADA == "True") / n())
 
 # Plot tree --------------------------------------------------------------------
 
@@ -187,37 +136,22 @@ nbarc_tree <- ape::root(nbarc_tree, outgroup = "Ced4")
 # Remove the domains from the tree labels
 nbarc_tree$tip.label = str_remove(nbarc_tree$tip.label, "_\\d$")
 
-tree_plot <- ggtree(nbarc_tree) %<+% big_table +
-  geom_tiplab(
-    align = TRUE,
-    aes(label = Homologs),
-    offset = 2.2,
-    linetype = "blank",
-    size = 2
-  )
+tree_plot <- ggtree(nbarc_tree, layout = "circular") %<+% big_table
 
 tree_plot <- gheatmap(
   tree_plot,
-  resistify %>%
+  big_table %>%
     dplyr::select(Sequence, Classification) %>%
     column_to_rownames(var = "Sequence"),
   width = 0.1,
   color = NA,
-  colnames) +
+  colnames = FALSE
+) +
   scale_fill_manual(values = paired_colours)
-
-Feature <- big_table %>%
-  mutate(Feature = case_when(
-    MADA == "True" ~ "MADA",
-    CJID == "True" ~ "CJID"
-    )
-  ) %>%
-  dplyr::select(Sequence, Feature) %>%
-  column_to_rownames(var = "Sequence")
 
 tree_plot <- gheatmap(
   tree_plot + new_scale_fill(),
-  resistify %>%
+  big_table %>%
     mutate(
       Feature = case_when(
         MADA == "True" ~ "MADA",
@@ -262,82 +196,16 @@ tree_plot <- gheatmap(
   color = NA,
   colnames = FALSE
 ) +
-  scale_fill_manual(values = c(
-    "Helitron" = nice_colours[4],
-    "TIR" = nice_colours[5],
-    "LTR" = nice_colours[6]
-  ), na.value = "white")
+  scale_fill_manual(
+    values = c(
+      "Helitron" = nice_colours[4],
+      "TIR" = nice_colours[5],
+      "LTR" = nice_colours[6]
+    ),
+    na.value = "white"
+  )
 
-#tree_plot <- gheatmap(
-#  tree_plot + new_scale_fill(),
-#  tpm_matrix,
-#  offset = 4,
-#  color = NA,
-#  colnames_angle = 90
-#) +
-#  scale_fill_viridis_c(option = "magma")
-
-ggsave("nlr_tree.pdf", tree_plot + geom_treescale(), width = 8, height = 8, units = "in")
-
-# Expression analysis ----------------------------------------------------------
-
-de_genes %>%
-  filter(gene %in% nlr_list) %>%
-  filter(status != "not significant") %>%
-  ggplot(aes(x = coef, fill = status)) +
-  geom_bar()
-
-joined <- inner_join(resistify, tpm, relationship = "many-to-many") %>%
-  filter(Classification != "None")
-
-joined %>%
-  ggplot(aes(y = tpm, fill = condition)) +
-  geom_boxplot()
-
-# Are there differences in NLR expression between conditions?
-condition_lm <- summary(lm(tpm ~ condition, data = joined))
-condition_lm
-
-expression_histogram <- big_table %>%
-  ggplot(aes(x = mean_expression, fill = condition)) +
-  geom_histogram() +
-  labs(x = "Log2(TPM)", y = "# NLRs") +
-  scale_fill_manual(values = nice_colours)
-expression_histogram
-
-# how many NLRs are low to unexpressed?
-
-joined %>%
-  group_by(Sequence) %>%
-  summarise(tpm = mean(tpm)) %>%
-  summarise(sum(tpm < 1) / n())
-# 23.1%
-
-# Is this cus of helixer?
-
-helixer_lm <- summary(lm(mean_expression ~ helixer, data = big_table))
-
-
-
-helixer_resistify <- helixer_resistify %>%
-  mutate(Sequence = gsub("\\.1", "", Sequence)) %>%
-  mutate(Missing = Sequence %in% missing_nlrs$gene_id)
-
-
-nlr_clustering <- data.frame(Type = character(), Count = integer())
-
-for(i in seq(0, 100000, by = 1000)) {
-  overlaps <- countOverlaps(genes(helixer_gff)[helixer_nlrs,], maxgap = i)
-  print(sum(overlaps == 1))
-  print(sum(overlaps > 1))
-}
-
-helixer_resistify <- helixer_resistify %>%
-  mutate(Overlapping = Sequence %in% earlgrey_intersect$V4)
-
-tree_plot <- ggtree(helixer_tree, layout = "daylight") %<+% helixer_resistify
-tree_plot +
-  geom_tippoint(aes(colour = Missing, shape = Overlapping))
+ggsave("../../pandoc-thesis/figures/nlr_tree.png", tree_plot + geom_treescale(), width = 5.9, height = 5.9, units = "in")
 
 merged <- big_table %>%
   filter(!is.na(mean_expression)) %>%
@@ -378,11 +246,15 @@ for (i in 1:length(row_order(ht))) {
   }
 }
 
-cooltree <- ggtree(nbarc_tree) %<+% as.data.frame(out)
-cooltree +
-  geom_tippoint(aes(colour = Cluster))
-
 # rpi-ver1 analysis ------------------------------------------------------------
+
+ver1_kasp <- read.table(
+  "../results/kasp_blast.tsv"
+)
+
+annotation_gff <- read.table(
+  "../results/final_annotation/final_annotation.gff"
+)
 
 # what are the boundaries of the wider locus?
 ver1_kasp %>%
