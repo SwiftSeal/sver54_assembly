@@ -1,0 +1,323 @@
+---
+title: "NLRs"
+author: "Moray Smith"
+date: "`r Sys.Date()`"
+output: html_document
+---
+
+```{r echo = FALSE}
+library(tidyverse)
+library(GenomicFeatures)
+library(ggtree)
+library(ggpubr)
+library(ggthemes)
+library(ggnewscale)
+library(ComplexHeatmap)
+
+paired_colours = c(
+  "CN" = "#a6cee3", 
+  "CNL" = "#1f78b4", 
+  "N" = "#b2df8a", 
+  "NL" = "#33a02c", 
+  "RN" = "#fb9a99", 
+  "RNL" = "#e31a1c", 
+  "TN" = "#fdbf6f", 
+  "TNL" = "#ff7f00"
+)
+```
+
+```{r}
+resistify <- read.table(
+  "../results/resistify/final/results.tsv",
+  sep = "\t",
+  header = TRUE
+  ) |>
+  mutate(gene = str_replace(Sequence, "\\..*$", "")) |>
+  mutate(helixer = str_detect(gene, "solanum_verrucosum")) |>
+  filter(Classification != "None")
+
+longest_isoform <- resistify |>
+  group_by(gene, Sequence) |>
+  arrange(desc(Length)) |>
+  filter(row_number() == 1) |>
+  pull(Sequence)
+```
+
+```{r}
+resistify |>
+  filter(Sequence %in% longest_isoform) |>
+  filter(Classification == "TNL") |>
+  summarise(mada = mean(MADA == "True"))
+```
+
+```{r}
+resistify |>
+  filter(Sequence %in% longest_isoform) |>
+  filter(Classification == "TNL") |>
+  summarise(cjid = mean(CJID == "True"))
+```
+
+Import homolog data
+```{r}
+homologs <- read_tsv("../results/refplantnlr_diamond.tsv", col_names = FALSE) |>
+  filter(X1 %in% longest_isoform) |>
+  mutate(gene = str_replace(X1, "\\..*$", "")) |>
+  filter(X3 > 90) |>
+  dplyr::select(gene , homolog = "X2") |>
+  group_by(gene) |>
+  summarise(homologs = paste(homolog, collapse = "; "))
+
+resistify <- resistify |>
+  left_join(homologs, by = "gene")
+```
+
+Import expression data
+
+```{r}
+rna_counts <- read_csv("data/rnaseq_normalised_counts.csv") |>
+  mutate(value = log10(value + 1)) |>
+  pivot_wider(names_from = condition, values_from = value)
+
+resistify <- resistify |>
+  left_join(rna_counts, by = "gene")
+```
+
+Import methylation data
+
+```{r}
+methylation <- read_csv("data/gene_methylation_status.csv") |>
+  mutate(gene = str_replace(gene, "\\..*$", ""))
+  
+resistify <- resistify |>
+  left_join(methylation, by = "gene")
+```
+
+Get ranges of NLRs for clustering analysis
+```{r}
+genes <- makeTxDbFromGFF("../results/final_annotation/final_annotation.gff")
+
+genes <- genes(genes)
+
+nlr_ranges <- genes[genes$gene_id %in% resistify$gene]
+```
+
+Find a good cutoff of overlaps for defining an NLR cluster
+
+```{r}
+cluster_count <- function(x) {
+  clusters <- subjectHits(
+    findOverlaps(nlr_ranges, reduce(nlr_ranges, min.gapwidth = x))
+    )
+  
+  as.data.frame(table(clusters)) |>
+    mutate(type = ifelse(Freq > 2, "cluster", "singleton")) |>
+    group_by(type) |>
+    summarise(total_nlrs = sum(Freq)) |>
+    mutate(range = x)
+}
+
+cluster_counts <- lapply(seq(0, 100000, by = 2000), cluster_count) |>
+  bind_rows()
+
+ggplot(cluster_counts) +
+  geom_point(aes(x = range, y = total_nlrs, colour = type))
+```
+30kbp looks good, beyond this point the rate of clusters decreases.
+Annotate ranges accordingly
+
+```{r}
+nlr_ranges$cluster <- subjectHits(
+  findOverlaps(nlr_ranges, reduce(nlr_ranges, min.gapwidth = 30000))
+  )
+
+cluster_types <- as.data.frame(table(nlr_ranges$cluster)) |>
+  mutate(type = ifelse(Freq > 2, "cluster", "singleton"))
+
+nlr_ranges$cluster_type <- cluster_types$type[match(nlr_ranges$cluster, cluster_types$Var1)]
+
+nlr_ranges <- as.data.frame(nlr_ranges) |>
+  dplyr::select(gene = "gene_id", cluster, cluster_type)
+
+resistify <- resistify |>
+  left_join(nlr_ranges, by = "gene")
+```
+
+```{r}
+resistify |>
+  filter(cluster_type == "cluster")
+```
+NLRs overlapping TEs
+
+```{r}
+earlgrey_overlaps <- read.table(
+  "../results/final_annotation/final_annotation.longest.earlgrey_overlap.bed"
+) |>
+  mutate(proportion = V16 / (V3 - V2)) |>
+  dplyr::select(Sequence = "V4", TE = "V13", proportion) |>
+  filter(proportion > 0.9) |>
+  dplyr::select(Sequence, Earlgrey = TE) |>
+  mutate(
+    Earlgrey = case_when(
+      Earlgrey == "RC/Helitron" ~ "Helitron",
+      Earlgrey == "LTR/Copia" ~ "LTR",
+      .default = "None"
+    )
+  )
+
+edta_overlaps <- read.table(
+  "../results/final_annotation/final_annotation.longest.edta_overlap.bed"
+) %>%
+  mutate(proportion = V19 / (V3 - V2)) %>%
+  filter(proportion > 0.9) %>%
+  filter(V12 != "repeat_region") %>%
+  dplyr::select(Sequence = "V4", EDTA = "V12") |>
+  mutate(
+    EDTA = case_when(
+      EDTA == "PIF_Harbinger_TIR_transposon" ~ "TIR",
+      EDTA == "Mutator_TIR_transposon" ~ "TIR",
+      EDTA == "CACTA_TIR_transposon" ~ "TIR",
+      EDTA == "Copia_LTR_retrotransposon" ~ "LTR",
+      EDTA == "helitron" ~ "Helitron",
+      .default = "None"
+    )
+  )
+
+resistify <- resistify |>
+  left_join(earlgrey_overlaps, by = "Sequence") |>
+  left_join(edta_overlaps, by = "Sequence")
+```
+
+## Phylogenetic tree
+
+```{r}
+tree <- read.tree("../results/resistify/final/all_nbarc.msa.raxml.bestTree")
+tree <- ape::root(tree, outgroup = "Ced4")
+tree$tip.label = str_remove(tree$tip.label, "_\\d$")
+
+resistify <- resistify |>
+  mutate(
+    extra = case_when(
+      MADA == "True" ~ "MADA",
+      CJID == "True" ~ "C-JID",
+      .default = NA
+    )
+  )
+
+tree_plot <- ggtree(tree) %<+% resistify
+
+# Plot Classification
+tree_plot <- gheatmap(
+  tree_plot,
+  resistify |>
+    dplyr::select(Sequence, Classification) |>
+    column_to_rownames(var = "Sequence"),
+  color = NA,
+  width = 0.1,
+  colnames = FALSE
+) +
+  scale_fill_manual(values = paired_colours, name = "Classification")
+
+# Plot extra domains
+tree_plot <- gheatmap(
+  tree_plot + new_scale_fill(),
+  resistify |>
+    dplyr::select(Sequence, extra) |>
+    column_to_rownames(var = "Sequence"),
+  color = NA,
+  width = 0.1,
+  offset = 0.5,
+  colnames = FALSE
+) +
+  scale_fill_manual(
+    name = "Additional",
+    values = c(
+      "C-JID" = "#4e79a6",
+      "MADA" = "#f2903b"
+    ),
+    na.value = "white"
+  )
+
+tree_plot <- gheatmap(
+  tree_plot + new_scale_fill(),
+  resistify |>
+    dplyr::select(Sequence, Earlgrey, EDTA) |>
+    column_to_rownames(var = "Sequence"),
+  color = NA,
+  width = 0.2,
+  offset = 1,
+  colnames = FALSE
+) +
+  scale_fill_manual(
+    name = "TE Overlap",
+    values = c(
+      "Helitron" = "#e1585b",
+      "LTR" = "#77b8b3",
+      "TIR" = "#5aa255"
+    ),
+    na.value = "white"
+  )
+
+ggsave(
+  "plots/nlr_tree.png",
+  tree_plot,
+  width = 5.9,
+  height = 6,
+  dpi = 600
+)
+```
+
+## Expression heatmap
+
+```{r}
+
+# Get matrix, but also hold onto homolog data for mapping
+rna_matrix <- resistify |>
+  dplyr::select("INFECTION_0":"TEMPERATURE_4", "homologs", "gene") |>
+  filter(!is.na(INFECTION_0))
+
+homologs_indices <- which(!is.na(rna_matrix$homologs))
+homologs_list <- rna_matrix$homologs[!is.na(rna_matrix$homologs)]
+
+ha = rowAnnotation(
+  foo = anno_mark(
+    at = homologs_indices,
+    labels = homologs_list,
+    labels_gp = gpar(fontsize = 8),
+    lines_gp = gpar(lwd = 0.5)
+  )
+)
+
+rna_matrix <- rna_matrix |>
+  dplyr::select("INFECTION_0":"TEMPERATURE_4") |>
+  as.matrix()
+
+column_labels <- c(
+  "0hpi",
+  "24hpi",
+  "Leaf",
+  "Root",
+  "Shoot",
+  "25°C",
+  "35°C",
+  "4°C"
+)
+
+ht = draw(
+  Heatmap(
+    name = "LCPM",
+    rna_matrix,
+    cluster_columns = FALSE,
+    column_labels = column_labels,
+    col = viridisLite::magma(100),
+    km = 14,
+    right_annotation = ha,
+    show_row_names = FALSE,
+    heatmap_legend_param = list(legend_direction = "horizontal"),
+  ),
+  heatmap_legend_side = "top"
+)
+
+png("plots/nlr_heatmap.png", width = 5.9, height = 5.9, res = 300, units = "in")
+ht
+dev.off()
+```

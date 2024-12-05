@@ -1,0 +1,172 @@
+---
+title: "S-RNase"
+author: "Moray Smith"
+date: "`r Sys.Date()`"
+output: html_document
+---
+
+```{r}
+library(tidyverse)
+library(gggenes)
+library(ggthemes)
+library(ggtree)
+library(Biostrings)
+library(msa)
+
+genomes <- c(
+    "annuum_annuum" = "annuum",
+    "bulbocastanum_bulbocastanum" = "bulbocastanum",
+    "candolleanum_candolleanum" = "candolleanum",
+    "chilense_chilense" = "chilense",
+    "chmielewskii_chmielewskii" = "chmielewskii",
+    "corneliomulleri_corneliomulleri" = "corneliomulleri",
+    "etuberosum_etuberosum" = "etuberosum",
+    "galapagense_galapagense" = "galapagense",
+    "habrochaites_habrochaites" = "habrochaites",
+    "lycopersicoides_lycopersicoides" = "lycopersicoides",
+    "lycopersicum_lycopersicum" = "lycopersicum",
+    "neorickii_neorickii" = "neorickii",
+    "peruvianum_peruvianum" = "peruvianum",
+    "pimpinellifolium_pimpinellifolium" = "pimpinellifolium",
+    "tuberosum_phureja_E4_63_tuberosum_phureja_E4_63" = "tuberosum_phureja_E4_63",
+    "tuberosum_phureja_E86_69_tuberosum_phureja_E86_69" = "tuberosum_phureja_E86_69",
+    "tuberosum_stenotomum_A6_26_tuberosum_stenotomum_A6_2" = "tuberosum_stenotomum_A6_26",
+    "tuberosum_stenotomum_PG6359_tuberosum_stenotomum_PG63" = "tuberosum_stenotomum_PG6359",
+    "tuberosum_tuberosum_RH10_15_tuberosum_tuberosum_RH10_" = "tuberosum_tuberosum_RH10_15",
+    "tuberosum_tuberosum_RH_tuberosum_tuberosum_RH" = "tuberosum_tuberosum_RH",
+    "verrucosum_verrucosum" = "verrucosum"
+)
+```
+
+```{r}
+srnase <- read.tree("../results/OG0023638_tree.txt")
+
+# Need to fix shitty orthofinder names
+for (pattern in names(genomes)){
+  srnase$tip.label <- gsub(pattern, genomes[[pattern]], srnase$tip.label)
+}
+
+slf <- read.tree("../results/OG0000138_tree.txt")
+
+for (pattern in names(genomes)){
+  slf$tip.label <- gsub(pattern, genomes[[pattern]], slf$tip.label)
+}
+```
+
+```{r}
+tree_plot <- ggtree(srnase) +
+  geom_tiplab(align = TRUE, size = 3) +
+  geom_tippoint(aes(subset = (label == "verrucosum_chr01_000612.1")), colour = "#4e79a6") +
+  xlim(0, 2.2) +
+  geom_treescale()
+
+ggsave("plots/srnase_tree.png", tree_plot, width = 5.9, height = 2, dpi = 600)
+```
+
+```{r}
+srnase_aa <- readAAStringSet("../results/OG0023638.fa")
+msaPrettyPrint(msa(srnase_aa))
+
+slf_aa <- readAAStringSet("../results/OG0000138.fa")
+msa(slf_aa)
+```
+
+```{r message=FALSE}
+get_upstream <- function(bed, edta, gene, boundary) {
+  helixer <- read_delim(bed, col_names = FALSE)
+  
+  start <- as.numeric(helixer[helixer$X4 == gene, "X2"])
+  
+  df <- read_tsv(edta, col_names = FALSE, comment = "#") |>
+    filter(X1 == "chr01", X4 > start - boundary, X4 < start) |>
+    dplyr::select(xmin = X4, xmax = X5, feature = X3) |>
+    mutate(
+      gene = gene,
+      xmin = xmin - start,
+      xmax = xmax - start
+    )
+  
+  return(df)
+}
+
+dfs <- list()
+
+for (gene in srnase$tip.label) {
+  genome <- str_extract(gene, "(.*)_chr.*$", group = 1)
+  
+  df <- get_upstream(
+    paste0("../results/pangenomics_annot/", genome, ".bed"),
+    paste0("../results/pangenomics_annot/", genome, ".fa.mod.EDTA.TEanno.gff3"),
+    gene,
+    5000
+  )
+  
+  dfs[[length(dfs) + 1]] <- df
+}
+
+df <- bind_rows(dfs)
+
+df <- df |>
+  mutate(
+    feature = case_when(
+      str_detect(feature, "LTR") ~ "LTR",
+      str_detect(feature, "TIR") ~ "TIR",
+      .default = NA
+    )
+  ) |>
+  drop_na()
+```
+
+
+```{r}
+earlgrey <- read_tsv(
+  "../results/earlgrey/solanum_verrucosum_summaryFiles/solanum_verrucosum.filteredRepeats.gff",
+  col_names = FALSE
+) |>
+  filter(X1 == "chr01", X4 > 47986461, X5 < 47986461 + 3000) |>
+  mutate(X4 = X4 - 47986461, X5 = X5 - 47986461)
+
+edta <- read_tsv(
+  "../results/edta/final_assembly.fa.mod.EDTA.TEanno.gff3",
+  col_names = FALSE,
+  comment = "#"
+) |>
+  filter(X1 == "chr01", X4 > 47986461, X5 < 47986461 + 3000) |>
+  mutate(X4 = X4 - 47986461, X5 = X5 - 47986461)
+
+annotation_plot = ggplot() +
+  geom_segment(data = earlgrey, x = 0, xend = 3000, y = "Earlgrey", yend = "Earlgrey", colour = "#333333", size = 1) +
+  geom_segment(data = earlgrey, x = 0, xend = 3000, y = "EDTA", yend = "EDTA", colour = "#333333", size = 1) +
+  geom_segment(data = earlgrey, aes(x = X4, xend = X5, y = "Earlgrey", yend = "Earlgrey", colour = X3), size = 5) +
+  geom_segment(data = edta, aes(x = X4, xend = X5, y = "EDTA", yend = "EDTA", colour = X3), size = 5) +
+  scale_colour_tableau(name = "Annotation") +
+  theme_bw(base_size = 8) + theme(panel.grid = element_blank()) +
+  theme(legend.position = "top") +
+  labs(y = NULL, x = "S-RNase upstream (bp)")
+
+ggsave("plots/srnase_upstream.png", width = 5.9, height = 1.5, dpi = 600)
+  
+  
+```
+
+```{python}
+
+```
+
+```{r}
+plot <-  df |>
+  drop_na() |>
+  mutate(
+    feature = case_when(
+      str_detect(feature, "LTR") ~ "LTR",
+      str_detect(feature, "TIR") ~ "TIR",
+      .default = "Other"
+    )
+  ) |>
+  ggplot(aes(xmin = xmin, xmax = xmax, fill = feature, y = gene)) +
+  geom_gene_arrow() +
+  facet_wrap(~ gene, ncol = 1, scales = "free")
+
+ggsave("plots/srnase.png", plot, width = 10, height = 10)
+```
+

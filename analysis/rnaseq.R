@@ -1,48 +1,31 @@
-library(dplyr)
-library(stringr)
-library(ggplot2)
-library(ComplexHeatmap)
-library(tidyr)
-library(purrr)
-library(tibble)
-library(readr)
-library(limma)
-library(edgeR)
-library(tximport)
-library(topGO)
-
 # Import data ------------------------------------------------------------------
 
 # Experiment metadata (samples, repeats, etc)
-metadata <- read.table("../config/rna_seq_samples.tsv", header = TRUE)
+metadata <- read.table("config/rna_seq_samples.tsv", header = TRUE)
 
 # Get transcript to gene relationship table from gff file
 # Helixer inserted genes are mRNA, BRAKER3 or transcript
-transcript_to_gene <- read.table(
-  "../results/final_annotation/final_annotation.gff",
-  skip = 2,
-  sep = "\t"
-  ) %>%
-  filter(V3 == "transcript" | V3 == "mRNA") %>%
-  mutate(
-    gene = str_extract(V9, "Parent=([^;]+)", group = 1),
-    transcript = str_extract(V9, "ID=([^;]+);", group = 1)
-  ) %>%
-  dplyr::select(c(transcript, gene)) %>%
-  filter(!str_detect(transcript, "agat"))
+transcript_to_gene <- fs::path("results", "final_annotation", "final_annotation.gff") |>
+  read.table(skip = 2, sep = "\t") |>
+  dplyr::filter(V3 == "transcript" | V3 == "mRNA") |>
+  dplyr::mutate(
+    gene = stringr::str_extract(V9, "Parent=([^;]+)", group = 1),
+    transcript = stringr::str_extract(V9, "ID=([^;]+);", group = 1)
+  ) |>
+  dplyr::select(c(transcript, gene)) |>
+  dplyr::filter(!stringr::str_detect(transcript, "agat"))
   
 # Salmon quantification files
-sample_filepaths <- list.files("../results/salmon/")
+sample_filepaths <- list.files("results/salmon/")
 
-salmon_quantification <- tximport(
-  file.path("../results/salmon/", sample_filepaths, "quant.sf"),
-  type = "salmon",
-  tx2gene = transcript_to_gene,
-  countsFromAbundance = "lengthScaledTPM"
-)
+salmon_quantification <- fs::path("results", "salmon", sample_filepaths, "quant.sf") |>
+  tximport::tximport(
+    type = "salmon",
+    tx2gene = transcript_to_gene,
+    countsFromAbundance = "lengthScaledTPM"
+  )
 
 # Save tpm values from salmon prior to filtering
-
 tpm <- as.data.frame(salmon_quantification$counts)
 colnames(tpm) <- sample_filepaths
 tpm <- tpm %>%
@@ -52,26 +35,6 @@ tpm <- tpm %>%
   group_by(gene, condition) %>%
   summarise(tpm = mean(tpm))
 write_delim(tpm, file = "../results/tpm.tsv", delim = "\t")
-
-# To be honest I have no idea wtf this is
-# Retain GO ontology hit for highest scoring isoform
-go_terms <- read.table(
-  "../results/eggnog/eggnog.emapper.annotations",
-  skip = 5,
-  sep = "\t",
-  fill = TRUE
-  ) %>%
-  mutate(gene = gsub(".t\\d", "", V1)) %>%
-  group_by(gene) %>%
-  filter(V4 == max(V4)) %>%
-  dplyr::select(gene, V10)
-
-go_terms <- as.data.frame(go_terms)
-
-map <- go_terms[,2]
-names(map) <- gsub(" ", "", go_terms[,1])
-geneID2GO <- lapply(map, function(x) gsub(" ", "", strsplit(x, split = ",")[[1]]))
-  
 
 # Analysis ---------------------------------------------------------------------
 

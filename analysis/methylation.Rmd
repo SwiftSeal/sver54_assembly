@@ -1,0 +1,121 @@
+---
+title: "methylation"
+author: "Moray Smith"
+date: "`r Sys.Date()`"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Import libraries
+
+```{r, warning = FALSE}
+library(tximport)
+library(tidyverse)
+library(ggpubr)
+library(ggthemes)
+```
+
+## Gene methylation
+
+```{r}
+read_gene_methylation <- function(filepath, type) {
+  out_df <- fs::path(filepath) |>
+    read_table(col_names = FALSE) |>
+    filter(str_detect(X3, "exon")) |>
+    mutate(gene = ifelse(
+      X2 == "Helixer",
+      str_match(X9, "Parent=(.*?)$")[,2],
+      str_match(X9, "gene_id=(.*?);")[,2]
+      )
+    ) |>
+    mutate(X10 = replace(X10, X10 == ".", 0)) |>
+    mutate(weighted_mean = as.numeric(X10) * as.numeric(X11)) |>
+    dplyr::select(gene, weighted_mean, feature = X3, size = X11) |>
+    group_by(gene, feature) |>
+    summarise(mean_methylation = sum(weighted_mean) / sum(size)) |>
+    mutate(type = type)
+  
+  return (out_df)
+}
+
+cg_gene_methylation <- read_gene_methylation("../results/deepsignal/final_annotation.CG.gff", "CG")
+chg_gene_methylation <- read_gene_methylation("../results/deepsignal/final_annotation.CHG.gff", "CHG")
+chh_gene_methylation <- read_gene_methylation("../results/deepsignal/final_annotation.CHH.gff", "CHH")
+
+gene_methylation <- rbind(cg_gene_methylation, chg_gene_methylation, chh_gene_methylation) |>
+  pivot_wider(names_from = type, values_from = mean_methylation) |>
+  mutate(classification = case_when(
+    CG <= 0.05 && CHG <= 0.05 ~ "UM",
+    CG > 0.2 && CHG <= 0.05 ~ "gbM",
+    CG > 0.4 && CHG > 0.4 ~ "teM",
+    .default = "ambiguous"
+  ))
+```
+
+```{r}
+plot_methylation <- gene_methylation |>
+  ggplot(aes(x = CG, y = CHG, colour = classification)) +
+  geom_point(alpha = 0.05) +
+  geom_hline(yintercept = 0.05, linetype = 2) +
+  geom_hline(yintercept = 0.4, linetype = 2) +
+  geom_vline(xintercept = 0.05, linetype = 2) +
+  geom_vline(xintercept = 0.2, linetype = 2) +
+  theme_bw(base_size = 8) + theme(panel.grid = element_blank()) +
+  scale_colour_tableau()
+```
+
+```{r}
+rnaseq_normalised_counts <- read_csv("data/rnaseq_normalised_counts.csv")
+
+plot_expression <- gene_methylation |>
+  left_join(rnaseq_normalised_counts, by = "gene") |>
+  filter(condition == "LEAF") |>
+  ggplot(aes(x = classification, y = log2(value + 1), fill = classification)) +
+  geom_boxplot() +
+  theme_bw(base_size = 8) + theme(panel.grid = element_blank()) +
+  scale_fill_tableau()
+```
+
+```{r}
+leaf_data <- gene_methylation |>
+  left_join(rnaseq_normalised_counts, by = "gene") |>
+  filter(condition == "LEAF")
+
+leaf_data$classification <- relevel(
+  as.factor(leaf_data$classification),
+  ref = "UM"
+  )
+
+leaf_data.lm <- lm(log2(value + 1) ~ classification, leaf_data)
+
+summary(leaf_data.lm)
+```
+
+```{r}
+final_plot <- ggarrange(
+  plot_methylation,
+  plot_expression,
+  align = "hv",
+  legend.grob = get_legend(plot_expression + theme(legend.position = "top")),
+  labels = "auto",
+  font.label = list(size = 10)
+)
+
+ggsave("plots/gene_methylation.png", final_plot, width = 5.9, height = 3, dpi = 600)
+
+gene_methylation |>
+  dplyr::select(gene, methylation_classification = classification) |>
+  write_csv("data/gene_methylation_status.csv")
+```
+
+```{r, warning = FALSE}
+nicemodel <- gene_methylation |>
+  left_join(rnaseq_normalised_counts, by = "gene") |>
+  filter(condition == "LEAF") |>
+  lm(formula = log2(value + 1) ~ classification)
+
+summary(nicemodel)
+```
