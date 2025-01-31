@@ -1,0 +1,77 @@
+---
+title: "RNAseq"
+author: "Moray Smith"
+date: "`r Sys.Date()`"
+output: html_document
+---
+
+```{r}
+library(DESeq2)
+library(tximport)
+
+get_contrast <- function(dds, coef) {
+  base_condition <- str_split_i(coef, "_vs_", -1)
+  dds$condition <- relevel(dds$condition, base_condition)
+  dds <- nbinomWaldTest(dds)
+  res <- lfcShrink(dds, coef = coef, type = "apeglm")
+}
+```
+
+```{r}
+samples <- read_tsv("../config/rna_seq_samples.tsv")
+tx2gene <- read_tsv("../results/nf-rnaseq/star_salmon/tx2gene.tsv")
+
+dds <- tximport(
+  fs::path("..", "results", "nf-rnaseq", "star_salmon", samples$sample, "quant.sf"),
+  type = "salmon",
+  tx2gene = tx2gene
+) |>
+  DESeqDataSetFromTximport(colData = samples, design = ~ condition) |>
+  DESeq()
+
+vst(dds) |>
+  plotPCA()
+
+# Save count data
+normalized_counts <- as.data.frame(counts(dds, normalized = TRUE))
+
+colnames(normalized_counts) <- dds$sample
+
+normalized_counts |>
+  rownames_to_column("gene") |>
+  write_tsv("data/normalised_counts.tsv")
+```
+
+## Infection conditions
+
+```{r}
+infection_samples <- samples |>
+  filter(condition %in% c("Infection_0", "Infection_24"))
+         
+dds <- tximport(
+  fs::path("..", "results", "nf-rnaseq", "star_salmon", infection_samples$sample, "quant.sf"),
+  type = "salmon",
+  tx2gene = tx2gene
+) |>
+  DESeqDataSetFromTximport(colData = infection_samples, design = ~ condition) |>
+  DESeq()
+
+infection_results <- get_contrast(dds, "condition_Infection_24_vs_Infection_0")
+```
+
+## Tissue conditions
+
+```{r}
+tissue_samples <- samples |>
+  filter(condition %in% c("Leaf", "Root", "Shoot"))
+         
+dds <- tximport(
+  fs::path("..", "results", "nf-rnaseq", "star_salmon", tissue_samples$sample, "quant.sf"),
+  type = "salmon",
+  tx2gene = tx2gene
+) |>
+  DESeqDataSetFromTximport(colData = tissue_samples, design = ~ condition) |>
+  DESeq()
+
+leaf_vs_root_results <- get_contrast(dds, "condition_Leaf_vs_Root")
+```

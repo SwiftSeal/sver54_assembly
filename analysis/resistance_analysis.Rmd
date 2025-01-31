@@ -1,0 +1,75 @@
+---
+title: "Resistance analysis"
+author: "Moray Smith"
+date: "`r Sys.Date()`"
+output: html_document
+---
+
+# Setup
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(tidyverse)
+library(ggpubr)
+library(ggthemes)
+```
+
+## Import data
+
+```{r}
+resistify_nlr <- read_tsv("../results/resistify/nlr/results.tsv") |>
+  mutate(gene = str_extract(Sequence, "(.*)\\.", group = 1))
+
+resistify_prr <- read_tsv("../results/resistify/prr/results.tsv") |>
+  mutate(gene = str_extract(Sequence, "(.*)\\.", group = 1))
+
+gff <- read_tsv(
+  "../results/annotation/gene/final_annotation.longest.gff",
+  col_names = FALSE,
+  comment = "#"
+) |>
+  filter(X3 == "gene") |>
+  mutate(gene = str_extract(X9, "ID=(.*)", group = 1))
+
+rpi_ver1_kasp_blast <- read_tsv("../results/kasp_blast.tsv", col_names = FALSE)
+```
+
+# Analysis
+
+How many NLRs are there in ver54?
+
+```{r}
+resistify_nlr |>
+  group_by(Classification) |>
+  summarise(count = n())
+```
+
+## Rpi-ver1
+
+Markers `DMG400017237` and `DMG400017146` designate the smallest locus.
+Get list of genes within this locus.
+
+```{r}
+rpi_ver1_start <- 54600000 # 54606140 rounded down
+rpi_ver1_end <- 55960000 # 55951334 rounded up
+rpi_ver1_genes <- gff |>
+  filter(X1  == "chr09" & X5 < rpi_ver1_end & X4 > rpi_ver1_start) |>
+  left_join(resistify_prr, by = "gene") |>
+  View()
+```
+
+Are there any NLRs?
+
+```{r}
+resistify_nlr |>
+  ggplot(aes(x = Length, fill = Classification)) +
+  geom_histogram() +
+  scale_fill_tableau()
+```
+
+```{r}
+gff |>
+  filter(X1  == "chr09" & X5 < rpi_ver1_end & X4 > rpi_ver1_start) |>
+  ggplot() +
+  geom_rect(aes(xmin = X4, xmax = X5, ymin = 0, ymax = 1))
+```

@@ -1,0 +1,155 @@
+---
+title: "Assembly analysis"
+author: "Moray Smith"
+date: "`r Sys.Date()`"
+output: html_document
+---
+
+```{r}
+library(tidyverse)
+library(ggpubr)
+library(ggthemes)
+library(extrafont)
+library(scattermore)
+font_import(prompt = FALSE, pattern = "arial")
+loadfonts(device = "win")
+
+chromosomes <- c(
+  "chr01",
+  "chr02",
+  "chr03",
+  "chr04",
+  "chr05",
+  "chr06",
+  "chr07",
+  "chr08",
+  "chr09",
+  "chr10",
+  "chr11",
+  "chr12"
+)
+
+theme_set(theme_bw(base_size = 8, base_family = "Arial") + theme(panel.grid = element_blank()))
+```
+## Import data
+```{r}
+gc <- read.table("../results/windows/gc.bed") |>
+  dplyr::select(V1, V2, V3, V5) |>
+  dplyr::rename(chrom = "V1", start = "V2", end = "V3", prop = "V5") |>
+  mutate(feature = "GC")
+
+genes <- read.table("../results/windows/genes.bed") |>
+  dplyr::select(V1, V2, V3, V7) |>
+  dplyr::rename(chrom = "V1", start = "V2", end = "V3", prop = "V7") |>
+  mutate(feature = "Gene")
+
+ty1 <- read.table("../results/windows/Ty1.bed") |>
+  dplyr::select(V1, V2, V3, V7) |>
+  dplyr::rename(chrom = "V1", start = "V2", end = "V3", prop = "V7") |>
+  mutate(feature = "Ty1")
+
+ty3 <- read.table("../results/windows/Ty3.bed") |>
+  dplyr::select(V1, V2, V3, V7) |>
+  dplyr::rename(chrom = "V1", start = "V2", end = "V3", prop = "V7") |>
+  mutate(feature = "Ty3")
+
+cenh3 <- read.csv("../results/windows/cenh3.bed") |>
+  filter(V1 %in% chromosomes) |>
+  mutate(prop = V1.1 / max(V1.1), feature = "CENH3") |>
+  dplyr::select(chrom = "V1", start = "V2", end = "V3", prop, feature)
+
+methylation <- read.table("../results/windows/methylation.tab") |>
+  dplyr::rename(
+    chrom = "V1",
+    start = "V2",
+    end = "V3",
+    CG = "V4",
+    CHG = "V5",
+    CHH = "V6"
+  ) |>
+  pivot_longer(cols = CG:CHH, names_to = "feature", values_to = "prop")
+
+merged <- rbind(gc, genes, ty1, ty3, cenh3, methylation)
+
+merged <- merged |>
+  filter(chrom %in% chromosomes)
+
+# GBM
+gbm_cg <- read_tsv("../results/methylation/sver54.gene.CG.gff", col_names = NULL) |>
+  filter(X3 == "exon") |>
+  mutate(
+    gene = str_extract(X9, "Parent=([^;]+)", group = 1),
+    length = X5 - X4,
+    freq = ifelse(X10 == ".", 0, as.numeric(X10)) * length
+  ) |>
+  group_by(gene) |>
+  summarise(cg = sum(freq) / sum(length))
+
+gbm_chg <- read_tsv("../results/methylation/sver54.gene.CHG.gff", col_names = NULL) |>
+  filter(X3 == "exon") |>
+  mutate(
+    type = "CHG",
+    gene = str_extract(X9, "Parent=([^;]+);", group = 1),
+    length = X5 - X4,
+    freq = ifelse(X10 == ".", 0, as.numeric(X10)) * length
+  ) |>
+  group_by(gene) |>
+  summarise(chg = sum(freq) / sum(length))
+
+gbm_merged <- inner_join(gbm_cg, gbm_chg, by = "gene") |>
+  mutate(
+    classification = case_when(
+      cg <= 0.05 & chg <= 0.05 ~ "UM",
+      cg > 0.2 & chg <= 0.05 ~ "gbM",
+      cg > 0.4 & chg > 0.4 ~ "teM",
+      .default = "ambiguous"
+    )
+  )
+
+expression <- read_tsv("data/normalised_counts.tsv") |>
+  pivot_longer(!gene) |>
+  mutate(
+    log2_count = log2(value + 1),
+    condition = str_extract(name, "(.*)_REP(\\d)", 1)
+  ) |>
+  group_by(condition, gene) |>
+  summarise(mean_log2_count = mean(log2_count))
+```
+
+```{r}
+plot <- ggplot(
+    merged,
+    aes(xmin = start, xmax = end, ymin = 0, ymax = prop, fill = prop)
+  ) +
+  geom_rect() +
+  facet_grid(factor(feature, levels = c("GC", "CG", "CHG", "CHH", "CENH3", "Gene", "Ty3", "Ty1")) ~ chrom, scales = "free") +
+  theme(
+    #panel.spacing = unit(0, "lines"),
+    #panel.background = element_blank(),
+    #panel.grid = element_blank(),
+    #axis.text.y = element_text(size = 8),
+    axis.text.x = element_blank(),
+    axis.ticks.x = element_blank(),
+    #strip.background = element_blank(),
+    #strip.text.y.right = element_text(angle = 0),
+    labs(x = "Length (bp)", y = "Proportion"),
+    legend.position = "none"
+  ) +
+  scale_fill_viridis_c(option = "magma")
+
+ggsave("plots/genome_features.svg", width = 200, height = 100, units = "mm")
+```
+
+## Gene body methylation
+
+```{r}
+plot <- ggplot(gbm_merged, aes(x = cg, y = chg, colour = classification)) +
+  geom_scattermore(alpha = .05, pointsize = 3.2) +
+  scale_colour_tableau(guide = guide_legend(override.aes = list(alpha = 1)))
+
+ggsave("plots/gbm.svg", plot, width = 75, height = 100, units = "mm")
+```
+
+```{r}
+full_join(gbm_merged, expression, by = "gene")
+```
