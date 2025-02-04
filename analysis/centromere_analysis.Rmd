@@ -111,12 +111,18 @@ count_table <- count_table |>
 count_table |>
   filter(p_value < 0.001) |>
   ggplot(aes(x = log10(odds))) +
-  geom_histogram()
+  geom_histogram(bins = 200)
 ```
 
 ```{r}
 tree <- read.tree("../results/tesorter/earlgrey.cls.pep.RT.aln.parstree")
+tree$tip.label <- str_extract(tree$tip.label,pattern = "(rnd-\\d_family-\\d+)_.*", group = 1)
 
-ggtree(tree) +
-  geom_tiplab()
+plot <- ggtree(tree) %<+% count_table
+
+plot +
+  geom_tippoint(aes(colour = log10(odds)))
+
+"rnd-1_family-5_LTR"
+str_extract("rnd-1_family-5_LTR", pattern = "(rnd-\\d_family-\\d+)_.*", group = 1)
 ```
