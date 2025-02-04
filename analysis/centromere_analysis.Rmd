@@ -1,0 +1,122 @@
+---
+title: "Centromeres"
+author: "Moray Smith"
+date: "`r Sys.Date()`"
+output: html_document
+---
+
+```{r}
+library(tidyverse)
+library(ggtree)
+```
+```{r}
+cg <- read_tsv("../results/centromeres/centromere_window_CG.bed", col_names = FALSE) |>
+  select(chromosome = X1, start = X2, end = X3, CG = X4) |>
+  group_by(chromosome) |>
+  mutate(start = start - min(start), end = end - min(start))
+
+chg <- read_tsv("../results/centromeres/centromere_window_CHG.bed", col_names = FALSE) |>
+  select(chromosome = X1, start = X2, end = X3, CHG = X4) |>
+  group_by(chromosome) |>
+  mutate(start = start - min(start), end = end - min(start))
+
+chh <- read_tsv("../results/centromeres/centromere_window_CHH.bed", col_names = FALSE) |>
+  select(chromosome = X1, start = X2, end = X3, CHH = X4) |>
+  group_by(chromosome) |>
+  mutate(start = start - min(start), end = end - min(start))
+
+ty3 <- read_tsv("../results/centromeres/centromere_window_ty3.bed", col_names = FALSE) |>
+  select(chromosome = X1, start = X2, end = X3, Ty3 = X4) |>
+  group_by(chromosome) |>
+  mutate(start = start - min(start), end = end - min(start))
+
+trash <- read_tsv("../results/centromeres/centromere_window_trash.bed", col_names = FALSE) |>
+  select(chromosome = X1, start = X2, end = X3, TRASH = X4) |>
+  group_by(chromosome) |>
+  mutate(start = start - min(start), end = end - min(start))
+
+cenh3 <- read_tsv(
+  "../results/centromeres/centromere_window_cenh3.tab",
+  col_names = FALSE,
+  comment = "#"
+) |>
+  group_by(X1) |>
+  mutate(
+    CENH3 = (X4 - min(X4))/(max(X4) - min(X4))
+  ) |>
+  select(chromosome = X1, start = X2, end = X3, CENH3) |>
+  group_by(chromosome) |>
+  mutate(end = end - min(start),start = start - min(start))
+
+merged <- cg |>
+  left_join(chg, by = join_by(chromosome, start, end)) |>
+  left_join(chh, by = join_by(chromosome, start, end)) |>
+  left_join(ty3, by = join_by(chromosome, start, end)) |>
+  left_join(trash, by = join_by(chromosome, start, end)) |>
+  left_join(cenh3, by = join_by(chromosome, start, end))
+
+ggplot(merged) +
+  geom_rect(aes(xmin = start, xmax = end, ymin = 0, ymax = 1, fill = CENH3)) +
+  scale_fill_gradient(low = "white", high = "#BAB0AC") +
+  facet_grid(chromosome ~ ., scales = "free_x")
+```
+```{r}
+calculate_fisher <- function(inside, outside, total_inside, total_outside) {
+  contigency_table <- matrix(c(inside, total_inside - inside, outside, total_outside - outside), nrow = 2)
+  result <- fisher.test(contigency_table)
+  return(c(odds = result$estimate, p_value = result$p.value))
+}
+
+earlgrey <- read_tsv(
+  "../results/solanum_verrucosum.filteredRepeats.gff", col_names = FALSE
+) |>
+  filter(!str_detect(X3, "Simple_repeat|Low_complexity")) |>
+  filter(!str_detect(X1, "scaffold")) |>
+  mutate(family = str_to_lower(str_extract(X9, "ID=(.*?);", group = 1))) |>
+  dplyr::select(
+    chromosome = X1,
+    type = X3,
+    start = X4,
+    end = X5,
+    family
+  )
+
+centromere_positions <- read_tsv(
+  "../results/centromeres/centromere_positions.bed",
+  col_names = FALSE
+) |>
+  select(chromosome = X1, cen_start = X2, cen_end = X3)
+
+earlgrey <- earlgrey |>
+  left_join(centromere_positions, by = "chromosome") |>
+  mutate(
+    cen_status = ifelse(start > cen_start & end < cen_end, "inside", "outside")
+  )
+
+count_table <- earlgrey |>
+  group_by(family, cen_status) |>
+  count() |>
+  pivot_wider(names_from = cen_status, values_from = n) %>%
+  replace(is.na(.), 0)
+
+total_inside <- sum(count_table$inside)
+total_outside <- sum(count_table$outside)
+
+count_table <- count_table |>
+  mutate(
+    p_value = calculate_fisher(inside, outside, total_inside, total_outside)[1],
+    odds = calculate_fisher(inside, outside, total_inside, total_outside)[2]
+  )
+
+count_table |>
+  filter(p_value < 0.001) |>
+  ggplot(aes(x = log10(odds))) +
+  geom_histogram()
+```
+
+```{r}
+tree <- read.tree("../results/tesorter/earlgrey.cls.pep.RT.aln.parstree")
+
+ggtree(tree) +
+  geom_tiplab()
+```
