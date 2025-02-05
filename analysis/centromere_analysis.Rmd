@@ -8,27 +8,35 @@ output: html_document
 ```{r}
 library(tidyverse)
 library(ggtree)
+library(ggthemes)
+library(extrafont)
+library(scattermore)
+font_import(prompt = FALSE, pattern = "arial")
+loadfonts(device = "win")
+
+theme_set(theme_bw(base_size = 8, base_family = "Arial") + theme(panel.grid = element_blank()))
 ```
+
 ```{r}
 cg <- read_tsv("../results/centromeres/centromere_window_CG.bed", col_names = FALSE) |>
   select(chromosome = X1, start = X2, end = X3, CG = X4) |>
   group_by(chromosome) |>
-  mutate(start = start - min(start), end = end - min(start))
+  mutate(end = end - min(start),start = start - min(start))
 
 chg <- read_tsv("../results/centromeres/centromere_window_CHG.bed", col_names = FALSE) |>
   select(chromosome = X1, start = X2, end = X3, CHG = X4) |>
   group_by(chromosome) |>
-  mutate(start = start - min(start), end = end - min(start))
+  mutate(end = end - min(start),start = start - min(start))
 
 chh <- read_tsv("../results/centromeres/centromere_window_CHH.bed", col_names = FALSE) |>
   select(chromosome = X1, start = X2, end = X3, CHH = X4) |>
   group_by(chromosome) |>
-  mutate(start = start - min(start), end = end - min(start))
+  mutate(end = end - min(start),start = start - min(start))
 
 ty3 <- read_tsv("../results/centromeres/centromere_window_ty3.bed", col_names = FALSE) |>
   select(chromosome = X1, start = X2, end = X3, Ty3 = X4) |>
   group_by(chromosome) |>
-  mutate(start = start - min(start), end = end - min(start))
+  mutate(end = end - min(start),start = start - min(start))
 
 trash <- read_tsv("../results/centromeres/centromere_window_trash.bed", col_names = FALSE) |>
   select(chromosome = X1, start = X2, end = X3, TRASH = X4) |>
@@ -46,7 +54,7 @@ cenh3 <- read_tsv(
   ) |>
   select(chromosome = X1, start = X2, end = X3, CENH3) |>
   group_by(chromosome) |>
-  mutate(end = end - min(start),start = start - min(start))
+  mutate(end = end - min(start), start = start - min(start))
 
 merged <- cg |>
   left_join(chg, by = join_by(chromosome, start, end)) |>
@@ -56,17 +64,17 @@ merged <- cg |>
   left_join(cenh3, by = join_by(chromosome, start, end))
 
 ggplot(merged) +
-  geom_rect(aes(xmin = start, xmax = end, ymin = 0, ymax = 1, fill = CENH3)) +
+  geom_rect(aes(xmin = start, xmax = end, ymin = 0, ymax = 1, fill = CG)) +
   scale_fill_gradient(low = "white", high = "#BAB0AC") +
   facet_grid(chromosome ~ ., scales = "free_x")
 ```
 ```{r}
-calculate_fisher <- function(inside, outside, total_inside, total_outside) {
-  contigency_table <- matrix(c(inside, total_inside - inside, outside, total_outside - outside), nrow = 2)
-  result <- fisher.test(contigency_table)
-  return(c(odds = result$estimate, p_value = result$p.value))
-}
+# import te classifications accoridng to tesorter
+tesorter <- read_tsv("../results/tesorter/earlgrey.cls.tsv", skip = 1, col_names = FALSE) |>
+  mutate(family = str_to_lower(str_extract(X1, "(rnd-\\d_family-\\d+).*", group = 1))) |>
+  select(order = X2, superfamily = X3, clade = X4, family)
 
+# get earlgrey annotations and their positions
 earlgrey <- read_tsv(
   "../results/solanum_verrucosum.filteredRepeats.gff", col_names = FALSE
 ) |>
@@ -81,37 +89,51 @@ earlgrey <- read_tsv(
     family
   )
 
+# get centromere positions and join them to earlgrey, identifying if TE lies inside or outside
 centromere_positions <- read_tsv(
   "../results/centromeres/centromere_positions.bed",
   col_names = FALSE
 ) |>
   select(chromosome = X1, cen_start = X2, cen_end = X3)
 
-earlgrey <- earlgrey |>
+earlgrey <- earlgrey|>
   left_join(centromere_positions, by = "chromosome") |>
   mutate(
     cen_status = ifelse(start > cen_start & end < cen_end, "inside", "outside")
   )
 
+# create a table of these counts for each family
 count_table <- earlgrey |>
   group_by(family, cen_status) |>
   count() |>
   pivot_wider(names_from = cen_status, values_from = n) %>%
   replace(is.na(.), 0)
 
+# values for contingency
 total_inside <- sum(count_table$inside)
 total_outside <- sum(count_table$outside)
 
+# MATHS!
 count_table <- count_table |>
+  inner_join(tesorter) |>
+  rowwise() |>
   mutate(
-    p_value = calculate_fisher(inside, outside, total_inside, total_outside)[1],
-    odds = calculate_fisher(inside, outside, total_inside, total_outside)[2]
+    fisher = list(fisher.test(matrix(c(inside, outside, total_inside - inside, total_outside - outside), nrow = 2))),
+    p_value = fisher$p.value,
+    odds = fisher$estimate
   )
 
 count_table |>
+  inner_join(tesorter) |>
+  filter(p_value < 0.05) |>
+  ggplot(aes(x = odds, fill = clade)) +
+  geom_histogram() +
+  scale_x_log10()
+
+unusual <- count_table |>
+  inner_join(tesorter) |>
   filter(p_value < 0.001) |>
-  ggplot(aes(x = log10(odds))) +
-  geom_histogram(bins = 200)
+  pull(family)
 ```
 
 ```{r}
@@ -121,8 +143,21 @@ tree$tip.label <- str_extract(tree$tip.label,pattern = "(rnd-\\d_family-\\d+)_.*
 plot <- ggtree(tree) %<+% count_table
 
 plot +
-  geom_tippoint(aes(colour = log10(odds)))
+  geom_tiplab(align = TRUE, size = 1) +
+  geom_tippoint(aes(colour = odds))
 
-"rnd-1_family-5_LTR"
-str_extract("rnd-1_family-5_LTR", pattern = "(rnd-\\d_family-\\d+)_.*", group = 1)
+plot2 <- ggtree(tidytree::tree_subset(tree, node = "rnd-1_family-236", levels_back = 5)) %<+% count_table
+plot2 <- plot2 +
+  geom_tippoint(aes(colour = clade)) +
+  geom_treescale() +
+  scale_colour_tableau()
+
+odds <- count_table |>
+  select(family, odds) |>
+  column_to_rownames("family")
+
+plot2 <- gheatmap(plot2, odds, color = NA, width = .1) +
+  scale_fill_viridis_c(option = "magma")
+  
+ggsave("plots/centromere_tes.svg", plot2, width = 100, height = 100, units = "mm")
 ```

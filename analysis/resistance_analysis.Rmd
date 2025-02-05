@@ -44,6 +44,17 @@ resistify_nlr |>
   summarise(count = n())
 ```
 
+```{r}
+tree <- read.tree("../results/resistify/nlr/nbarc.tree")
+tree <- ape::root(tree, outgroup = "Ced4")
+
+plot <- ggtree(tree, layout = "circular") %<+% resistify_nlr
+
+plot +
+  geom_tippoint(aes(colour = Classification))
+```
+
+
 ## Rpi-ver1
 
 Markers `DMG400017237` and `DMG400017146` designate the smallest locus.
