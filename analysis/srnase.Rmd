@@ -170,3 +170,36 @@ plot <-  df |>
 ggsave("plots/srnase.png", plot, width = 10, height = 10)
 ```
 
+```{r}
+gene_gff <- read_tsv(
+  "../results/annotation/cpc54.gene.gff",
+  col_names = FALSE,
+  comment = "#"
+) |>
+  filter(str_detect(X9, "cpc54_3362.1"))
+
+start = 47985683
+end = 47986461
+
+te_gff <- read_tsv(
+  "../results/annotation/"
+)
+
+cg <- read_tsv("../results/methylation/freq.CG.bedgraph", col_names = NA) |>
+  filter(X1 == "chr01", X2 > start - 5000, X3 < end + 5000)
+
+chg <- read_tsv("../results/methylation/freq.CHG.bedgraph", col_names = NA) |>
+  filter(X1 == "chr01", X2 > start - 5000, X3 < end + 5000)
+
+chh <- read_tsv("../results/methylation/freq.CHH.bedgraph", col_names = NA) |>
+  filter(X1 == "chr01", X2 > start - 5000, X3 < end + 5000)
+```
+
+```{r}
+ggplot() +
+  geom_rect(data = gene_gff, aes(xmin = X4, xmax = X5, ymin = 0, ymax = 1, fill = X3)) +
+  geom_segment(data = cg, aes(x = X2, xend = X2, y = 1, yend = 1 + X4)) +
+  geom_segment(data = chg, aes(x = X2, xend = X2, y = 2, yend = 2 + X4)) +
+  geom_segment(data = chh, aes(x = X2, xend = X2, y = 3, yend = 3 + X4))
+```
+

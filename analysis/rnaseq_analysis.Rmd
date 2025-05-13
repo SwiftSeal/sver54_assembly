@@ -7,13 +7,19 @@ output: html_document
 
 ```{r}
 library(DESeq2)
+library(WGCNA)
 library(tximport)
+library(tidyverse)
 
 get_contrast <- function(dds, coef) {
   base_condition <- str_split_i(coef, "_vs_", -1)
   dds$condition <- relevel(dds$condition, base_condition)
   dds <- nbinomWaldTest(dds)
   res <- lfcShrink(dds, coef = coef, type = "apeglm")
+  df <- as.data.frame(res) |>
+    rownames_to_column(var = "gene") |>
+    mutate(coefficient = coef)
+  return(df)
 }
 ```
 
@@ -29,6 +35,8 @@ dds <- tximport(
   DESeqDataSetFromTximport(colData = samples, design = ~ condition) |>
   DESeq()
 
+normalised_dds <- vst(dds)
+
 vst(dds) |>
   plotPCA()
 
@@ -42,6 +50,148 @@ normalized_counts |>
   write_tsv("data/normalised_counts.tsv")
 ```
 
+## WGCNA
+
+```{r}
+idx <- rowSums( counts(dds, normalized=TRUE) >= 5 ) >= 3
+
+normalised_counts <- dds[idx,] |>
+  vst() |>
+  assay() |>
+  t()
+
+sft <- pickSoftThreshold(
+  normalised_counts,
+  dataIsExpr = TRUE,
+  corFnc = cor,
+  networkType = "signed"
+)
+
+sft_df <- data.frame(sft$fitIndices) %>%
+  dplyr::mutate(model_fit = -sign(slope) * SFT.R.sq)
+
+ggplot(sft_df, aes(x = Power, y = model_fit, label = Power)) +
+  # Plot the points
+  geom_point() +
+  # We'll put the Power labels slightly above the data points
+  geom_text(nudge_y = 0.1) +
+  # We will plot what WGCNA recommends as an R^2 cutoff
+  geom_hline(yintercept = 0.80, col = "red") +
+  # Just in case our values are low, we want to make sure we can still see the 0.80 level
+  ylim(c(min(sft_df$model_fit), 1.05)) +
+  # We can add more sensible labels for our axis
+  xlab("Soft Threshold (power)") +
+  ylab("Scale Free Topology Model Fit, signed R^2") +
+  ggtitle("Scale independence") +
+  # This adds some nicer aesthetics to our plot
+  theme_classic()
+```
+From this, use a power threshold of 20
+
+```{r}
+bwnet <- blockwiseModules(
+  normalised_counts,
+  maxBlockSize = 5000, # What size chunks (how many genes) the calculations should be run in
+  TOMType = "signed", # topological overlap matrix
+  power = 20, # soft threshold for network construction
+  numericLabels = TRUE, # Let's use numbers instead of colors for module labels
+  randomSeed = 1234, # there's some randomness associated with this calculation
+  # so we should set a seed
+)
+
+MEs <- bwnet$MEs
+MEs$condition <- samples$condition
+
+MEs |>
+  pivot_longer(!condition, names_to = "ME", values_to = "eigengene") |>
+  filter(ME == "ME15") |>
+  ggplot(aes(x = condition, y = eigengene, colour = ME)) + 
+  geom_boxplot()
+```
+
+```{r}
+# Convert labels to colors for plotting
+mergedColors = labels2colors(bwnet$colors)
+
+# Plot the dendrogram and the module colors underneath
+plotDendroAndColors(
+  bwnet$dendrograms[[1]],
+  mergedColors[bwnet$blockGenes[[1]]],
+  "Module colors",
+  dendroLabels = FALSE,
+  hang = 0.03,
+  addGuide = TRUE,
+  guideHang = 0.05
+)
+
+module_df <- data.frame(
+  gene_id = names(bwnet$colors),
+  colors = labels2colors(bwnet$colors)
+)
+
+write_tsv(
+  module_df,
+  file = "data/gene_modules.txt",
+)
+
+MEs0 <- moduleEigengenes(normalised_counts, mergedColors)$eigengenes
+
+MEs0 <- orderMEs(MEs0)
+module_order = names(MEs0) %>% gsub("ME","", .)
+MEs0$treatment = samples$condition
+
+MEs0 |>
+  pivot_longer(-treatment) |>
+  mutate(
+    name = gsub("ME", "", name),
+    name = factor(name, levels = module_order)
+  ) |>
+  ggplot(aes(x=treatment, y=name, fill=value)) +
+  geom_tile() +
+  theme_bw() +
+  scale_fill_gradient2(
+    low = "blue",
+    high = "red",
+    mid = "white",
+    midpoint = 0,
+    limit = c(-1,1)) +
+  theme(axis.text.x = element_text(angle=90)) +
+  labs(title = "Module-trait Relationships", y = "Modules", fill="corr")
+```
+```{r}
+# pick out a few modules of interest here
+modules_of_interest = c("turquoise")
+
+# Pull out list of genes in that module
+submod = module_df |>
+  subset(colors %in% modules_of_interest)
+
+row.names(module_df) = module_df$gene_id
+
+# Get normalized expression for those genes
+subexpr = normalized_counts[submod$gene_id,]
+
+data.frame(subexpr) |>
+  rownames_to_column(var = "gene_id") |>
+  pivot_longer(-gene_id) |>
+  mutate(
+    module = module_df[gene_id,]$colors
+  ) |>
+  ggplot(aes(x=name, y=value, group=gene_id)) +
+  geom_line(aes(color = module),
+            alpha = 0.2) +
+  theme_bw() +
+  theme(
+    axis.text.x = element_text(angle = 90)
+  ) +
+  facet_grid(rows = vars(module)) +
+  labs(x = "treatment",
+       y = "normalized expression")
+```
+
+```{r}
+deseq2_result <- data.frame()
+```
 ## Infection conditions
 
 ```{r}
@@ -56,7 +206,7 @@ dds <- tximport(
   DESeqDataSetFromTximport(colData = infection_samples, design = ~ condition) |>
   DESeq()
 
-infection_results <- get_contrast(dds, "condition_Infection_24_vs_Infection_0")
+deseq2_result <- rbind(deseq2_result, get_contrast(dds, "condition_Infection_24_vs_Infection_0"))
 ```
 
 ## Tissue conditions
@@ -73,5 +223,56 @@ dds <- tximport(
   DESeqDataSetFromTximport(colData = tissue_samples, design = ~ condition) |>
   DESeq()
 
-leaf_vs_root_results <- get_contrast(dds, "condition_Leaf_vs_Root")
+deseq2_result <- rbind(deseq2_result, get_contrast(dds, "condition_Leaf_vs_Root"))
+deseq2_result <- rbind(deseq2_result, get_contrast(dds, "condition_Shoot_vs_Leaf"))
+deseq2_result <- rbind(deseq2_result, get_contrast(dds, "condition_Shoot_vs_Root"))
+```
+
+```{r}
+temperature_samples <- samples |>
+  filter(condition %in% c("Temperature_25C", "Temperature_4C", "Temperature_35C"))
+
+dds <- tximport(
+  fs::path("..", "results", "nf-rnaseq", "star_salmon", temperature_samples$sample, "quant.sf"),
+  type = "salmon",
+  tx2gene = tx2gene
+) |>
+  DESeqDataSetFromTximport(colData = temperature_samples, design = ~ condition) |>
+  DESeq()
+
+deseq2_result <- rbind(deseq2_result, get_contrast(dds, "condition_Temperature_4C_vs_Temperature_25C"))
+
+deseq2_result <- rbind(deseq2_result, get_contrast(dds, "condition_Temperature_35C_vs_Temperature_25C"))
+```
+
+```{r}
+deseq2_result <- deseq2_result |>
+  mutate(
+    status = case_when(
+      padj < 0.01 & log2FoldChange > 1 ~ "up-regulated",
+      padj < 0.01 & log2FoldChange < -1 ~ "down-regulated",
+      .default = "unchanged"
+    )
+  )
+
+plot <- deseq2_result |>
+  filter(status != "unchanged") |>
+  ggplot() +
+  geom_bar(position = "dodge", aes(y = coefficient, fill = status)) +
+  scale_y_discrete(
+    labels = c(
+      "condition_Shoot_vs_Root" = "Shoot vs. root",
+      "condition_Shoot_vs_Leaf" = "Shoot vs. leaf",
+      "condition_Leaf_vs_Root" = "Leaf vs. Root",
+      "condition_Infection_24_vs_Infection_0" = "Infection",
+      "condition_Temperature_35C_vs_Temperature_25C" = "Heat stress",
+      "condition_Temperature_4C_vs_Temperature_25C" = "Cold stress"
+    )  
+  ) +
+  theme(legend.position = "top") +
+  labs(x = "# DE genes", y = NULL) +
+  scale_fill_tableau(name = NULL)
+
+ggsave("plots/de_genes.svg", plot, width = 50, height = 55, units = "mm")
+write_tsv(deseq2_result, "data/de_genes.tsv")
 ```

@@ -12,6 +12,21 @@ knitr::opts_chunk$set(echo = TRUE)
 library(tidyverse)
 library(ggpubr)
 library(ggthemes)
+library(ggtree)
+library(ggnewscale)
+library(tidytree)
+library(ComplexHeatmap)
+
+paired_colours = c(
+  "CN" = "#a6cee3", 
+  "CNL" = "#1f78b4", 
+  "N" = "#b2df8a", 
+  "NL" = "#33a02c", 
+  "RN" = "#fb9a99", 
+  "RNL" = "#e31a1c", 
+  "TN" = "#fdbf6f", 
+  "TNL" = "#ff7f00"
+)
 ```
 
 ## Import data
@@ -20,11 +35,38 @@ library(ggthemes)
 resistify_nlr <- read_tsv("../results/resistify/nlr/results.tsv") |>
   mutate(gene = str_extract(Sequence, "(.*)\\.", group = 1))
 
+longest_nlrs <- resistify_nlr |>
+  filter(!is.na(Classification)) |>
+  group_by(gene) |>
+  slice_max(Length, n = 1, with_ties = FALSE) |>
+  pull(Sequence)
+
+nlrs <- resistify_nlr |>
+  filter(!is.na(Classification)) |>
+  pull(gene)
+
 resistify_prr <- read_tsv("../results/resistify/prr/results.tsv") |>
   mutate(gene = str_extract(Sequence, "(.*)\\.", group = 1))
 
+expression <- read_tsv("data/normalised_counts.tsv") |>
+  pivot_longer(!gene) |>
+  mutate(condition = str_extract(name, "(.*)_REP\\d$", group = 1)) |>
+  group_by(gene, condition) |>
+  summarise(log2count = log2(mean(value) + 1)) |>
+  pivot_wider(names_from = condition, values_from = log2count) |>
+  column_to_rownames(var = "gene")
+
+de_genes <- read_tsv("data/de_genes.tsv")
+
+homologs <- read_tsv("../results/refplantnlr_blast.txt", col_names = FALSE) |>
+  mutate(gene = str_extract(X1, "(.*)\\.", group = 1)) |>
+  #filter(str_detect(X2, "^NRC")) |>
+  group_by(gene, X2) |>
+  slice_max(X3, n = 1, with_ties = FALSE) |>
+  select(gene, homolog = X2)
+
 gff <- read_tsv(
-  "../results/annotation/gene/final_annotation.longest.gff",
+  "../results/annotation/cpc54.gene.gff",
   col_names = FALSE,
   comment = "#"
 ) |>
@@ -45,15 +87,204 @@ resistify_nlr |>
 ```
 
 ```{r}
+resistify_prr |>
+  group_by(Classification) |>
+  summarise(count = n())
+
+resistify_prr |>
+  group_by(Classification) |>
+  summarise(count = n()) |>
+  mutate(percentage = count / sum(count) * 100)
+```
+```{r}
+resistify_prr |>
+  left_join(de_genes) |>
+  filter(status != "unchanged") |>
+  ggplot(aes(y = Classification, fill = status)) +
+  geom_bar() +
+  facet_grid(Type ~ coefficient) +
+  scale_x_log10()
+
+# Get matrix, but also hold onto homolog data for mapping
+rna_matrix <- expression |>
+  rownames_to_column(var = "gene") |>
+  filter(gene %in% resistify_prr$gene)
+
+rna_matrix <- rna_matrix |>
+  dplyr::select("INFECTION_0":"TEMPERATURE_4") |>
+  as.matrix()
+
+column_labels <- c(
+  "0hpi",
+  "24hpi",
+  "Leaf",
+  "Root",
+  "Shoot",
+  "25°C",
+  "35°C",
+  "4°C"
+)
+
+ht = draw(
+  Heatmap(
+    name = "log2(counts+1)",
+    rna_matrix,
+    cluster_columns = FALSE,
+    column_labels = column_labels,
+    col = viridisLite::magma(100),
+    km = 14,
+    show_row_names = FALSE,
+    heatmap_legend_param = list(legend_direction = "horizontal"),
+  ),
+  heatmap_legend_side = "top"
+)
+
+pdf("plots/nlr_heatmap.pdf", width = 4, height = 8)
+ht
+dev.off()
+```
+
+```{r}
 tree <- read.tree("../results/resistify/nlr/nbarc.tree")
 tree <- ape::root(tree, outgroup = "Ced4")
 
-plot <- ggtree(tree, layout = "circular") %<+% resistify_nlr
+# remove domain suffix
+tree$tip.label <- str_remove(tree$tip.label, "_\\d$")
 
-plot +
-  geom_tippoint(aes(colour = Classification))
+# only plot longest isoform
+tree <- keep.tip(tree, c(longest_nlrs, "Ced4")) # Don't forget Ced4!
+
+# remove transcript suffix
+tree$tip.label <- str_remove(tree$tip.label, ".\\d$")
+
+classifications <- resistify_nlr |>
+  filter(Sequence %in% longest_nlrs) |>
+  select(gene, Classification) |>
+  column_to_rownames(var = "gene")
+
+gbm <- read_tsv("data/gene_body_methylation.tsv") |>
+  filter(sequence %in% longest_nlrs) |>
+  select(gene, classification) |>
+  column_to_rownames(var = "gene")
+
+plot <- ggtree(tree, layout = "circular") +
+  geom_treescale(width = 1)
+
+plot <- gheatmap(plot, classifications, width = .1, color = NA) +
+  scale_fill_manual(values = paired_colours)
+
+plot <- gheatmap(plot + new_scale_fill(), gbm, width = .1, offset = .4, color = NA) +
+  scale_fill_manual(
+    values = c(
+      "ambiguous" = "#eeca58",
+      "gbM" = "#b07aa1",
+      "teM" = "#ff9fa9",
+      "UM" = "#9d7561"
+    )
+  )
+
+ggsave("plots/nlr_tree.svg", plot, width = 200, height = 200, units = "mm")
 ```
 
+
+## Expression heatmap
+
+```{r}
+# Get matrix, but also hold onto homolog data for mapping
+rna_matrix <- expression |>
+  rownames_to_column(var = "gene") |>
+  filter(gene %in% nlrs) |>
+  left_join(homologs)
+  
+
+homologs_indices <- which(!is.na(rna_matrix$homolog))
+homologs_list <- rna_matrix$homolog[!is.na(rna_matrix$homolog)]
+
+ha = rowAnnotation(
+  foo = anno_mark(
+    at = homologs_indices,
+    labels = homologs_list,
+    labels_gp = gpar(fontsize = 8),
+    lines_gp = gpar(lwd = 0.5)
+  )
+)
+
+rna_matrix <- rna_matrix |>
+  dplyr::select("INFECTION_0":"TEMPERATURE_4") |>
+  as.matrix()
+
+column_labels <- c(
+  "0hpi",
+  "24hpi",
+  "Leaf",
+  "Root",
+  "Shoot",
+  "25°C",
+  "35°C",
+  "4°C"
+)
+
+ht = draw(
+  Heatmap(
+    name = "log2(counts+1)",
+    rna_matrix,
+    cluster_columns = FALSE,
+    column_labels = column_labels,
+    col = viridisLite::magma(100),
+    km = 14,
+    right_annotation = ha,
+    show_row_names = FALSE,
+    heatmap_legend_param = list(legend_direction = "horizontal"),
+  ),
+  heatmap_legend_side = "top"
+)
+
+pdf("plots/nlr_heatmap.pdf", width = 4, height = 8)
+ht
+dev.off()
+```
+
+```{r}
+merged <- expression |>
+  rownames_to_column(var = "gene") |>
+  filter(gene %in% nlrs) |>
+  left_join(gff) |>
+  mutate(helixer = ifelse(X2 == "Helixer", TRUE, FALSE))
+
+merged |>
+  group_by(helixer) |>
+  summarise(n())
+
+summary(lm(LEAF ~ helixer, data = merged))
+
+plot1 <- resistify_nlr |>
+  filter(!is.na(Classification)) |>
+  mutate(
+    status = case_when(
+      MADA == TRUE ~ "MADA",
+      CJID == TRUE ~ "CJID",
+      .default = NA,
+    )
+  ) |>
+  filter(!is.na(status)) |>
+  ggplot(aes(x = status)) +
+  geom_bar(fill = "#4e79a7ff") +
+  labs(x = NULL, y = "# NLRs")
+
+plot2 <- resistify_nlr |>
+  filter(!is.na(Classification)) |>
+  filter(LRR_Length != 0) |>
+  ggplot(aes(x = LRR_Length)) +
+  geom_histogram(fill = "#4e79a7ff") +
+  labs(x = "LRR Length", y = "# NLRs")
+
+plot3 <- ggplot(merged, aes(x = helixer, y = LEAF)) +
+  geom_boxplot(fill = "#4e79a7ff") +
+  labs(x = "Helixer predicted?", y = "log2(count+1)")
+
+merged <- ggarrange(plot1, plot2, plot3, ncol = 3, align = "hv")
+ggsave("plots/nlr_stats.svg", merged, width = 125, height = 40, units = "mm")
+```
 
 ## Rpi-ver1
 
@@ -65,8 +296,9 @@ rpi_ver1_start <- 54600000 # 54606140 rounded down
 rpi_ver1_end <- 55960000 # 55951334 rounded up
 rpi_ver1_genes <- gff |>
   filter(X1  == "chr09" & X5 < rpi_ver1_end & X4 > rpi_ver1_start) |>
-  left_join(resistify_prr, by = "gene") |>
-  View()
+  left_join(resistify_nlr, by = "gene")
+
+write_lines(pull(rpi_ver1_genes, var = "gene"), "data/rpi_ver1_genes.txt")
 ```
 
 Are there any NLRs?
@@ -75,12 +307,14 @@ Are there any NLRs?
 resistify_nlr |>
   ggplot(aes(x = Length, fill = Classification)) +
   geom_histogram() +
-  scale_fill_tableau()
+  
 ```
 
 ```{r}
-gff |>
+plot <- gff |>
   filter(X1  == "chr09" & X5 < rpi_ver1_end & X4 > rpi_ver1_start) |>
   ggplot() +
   geom_rect(aes(xmin = X4, xmax = X5, ymin = 0, ymax = 1))
+
+ggsave("plots/rpiver1.png", width = 200, height = 10, units = "mm")
 ```
