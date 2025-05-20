@@ -1,66 +1,58 @@
----
-title: "S-RNase"
-author: "Moray Smith"
-date: "`r Sys.Date()`"
-output: html_document
----
-
-```{r}
 library(tidyverse)
-library(gggenes)
-library(ggthemes)
-library(ggtree)
-library(Biostrings)
-library(msa)
 
-genomes <- c(
-    "annuum_annuum" = "annuum",
-    "bulbocastanum_bulbocastanum" = "bulbocastanum",
-    "candolleanum_candolleanum" = "candolleanum",
-    "chilense_chilense" = "chilense",
-    "chmielewskii_chmielewskii" = "chmielewskii",
-    "corneliomulleri_corneliomulleri" = "corneliomulleri",
-    "etuberosum_etuberosum" = "etuberosum",
-    "galapagense_galapagense" = "galapagense",
-    "habrochaites_habrochaites" = "habrochaites",
-    "lycopersicoides_lycopersicoides" = "lycopersicoides",
-    "lycopersicum_lycopersicum" = "lycopersicum",
-    "neorickii_neorickii" = "neorickii",
-    "peruvianum_peruvianum" = "peruvianum",
-    "pimpinellifolium_pimpinellifolium" = "pimpinellifolium",
-    "tuberosum_phureja_E4_63_tuberosum_phureja_E4_63" = "tuberosum_phureja_E4_63",
-    "tuberosum_phureja_E86_69_tuberosum_phureja_E86_69" = "tuberosum_phureja_E86_69",
-    "tuberosum_stenotomum_A6_26_tuberosum_stenotomum_A6_2" = "tuberosum_stenotomum_A6_26",
-    "tuberosum_stenotomum_PG6359_tuberosum_stenotomum_PG63" = "tuberosum_stenotomum_PG6359",
-    "tuberosum_tuberosum_RH10_15_tuberosum_tuberosum_RH10_" = "tuberosum_tuberosum_RH10_15",
-    "tuberosum_tuberosum_RH_tuberosum_tuberosum_RH" = "tuberosum_tuberosum_RH",
-    "verrucosum_verrucosum" = "verrucosum"
-)
-```
+# Plot the S-RNase gene with upstream TEs and methylation
 
-```{r}
-srnase <- read.tree("../results/OG0023638_tree.txt")
+results_path = "Z://scratch/sver54_assembly/results"
 
-# Need to fix shitty orthofinder names
-for (pattern in names(genomes)){
-  srnase$tip.label <- gsub(pattern, genomes[[pattern]], srnase$tip.label)
-}
+srnase_id <- "cpc54_3362.1"
 
-slf <- read.tree("../results/OG0000138_tree.txt")
+genes <- read_tsv(
+  file.path(results_path, "annotation/cpc54.gene.gff"),
+  col_names = FALSE,
+  comment = "#"
+) |>
+  filter(str_detect(X9, srnase_id))
 
-for (pattern in names(genomes)){
-  slf$tip.label <- gsub(pattern, genomes[[pattern]], slf$tip.label)
-}
-```
+srnase_start <- 47986461
+srnase_end <- 47985683
 
-```{r}
-tree_plot <- ggtree(srnase) +
-  geom_tiplab(align = TRUE, size = 3) +
-  geom_tippoint(aes(subset = (label == "verrucosum_chr01_000612.1")), colour = "#4e79a6") +
-  xlim(0, 2.2) +
-  geom_treescale()
+earlgrey <- read_tsv(
+  file.path(results_path, "hite/HiTE.gff"),
+  col_names = FALSE,
+  comment = "#"
+) |>
+  filter(X4 > srnase_start, X5 < srnase_start + 2000, X1 == "chr01")
 
-ggsave("plots/srnase_tree.png", tree_plot, width = 5.9, height = 2, dpi = 600)
+cg <- read_tsv(
+  file.path(results_path, "methylation/cpc54.cg.bedgraph"),
+  col_names = FALSE,
+) |>
+  filter(X2 > srnase_end, X3 < srnase_start + 2000, X1 == "chr01")
+
+chg <- read_tsv(
+  file.path(results_path, "methylation/cpc54.chg.bedgraph"),
+  col_names = FALSE,
+) |>
+  filter(X2 > srnase_end, X3 < srnase_start + 2000, X1 == "chr01")
+
+chh <- read_tsv(
+  file.path(results_path, "methylation/cpc54.chh.bedgraph"),
+  col_names = FALSE,
+) |>
+  filter(X2 > srnase_end, X3 < srnase_start + 2000, X1 == "chr01")
+
+srnase_plot <- ggplot() +
+  geom_rect(data = genes, aes(xmin = X4, xmax = X5, ymin = 0, ymax = -.1, fill = X3)) +
+  geom_rect(data = earlgrey, aes(xmin = X4, xmax = X5, ymin = 0, ymax = -.1, fill = X9)) +
+  geom_rect(data = cg, aes(xmin = X2, xmax = X3, ymin = 0, ymax = 0 + X4), fill = "#4E79A7") +
+  geom_rect(data = chg, aes(xmin = X2, xmax = X3, ymin = 0, ymax = 0 + X4), fill = "#F28E2B") +
+  geom_rect(data = chh, aes(xmin = X2, xmax = X3, ymin = 0, ymax = 0 + X4), fill = "#E15759") +
+  theme_bw(base_size = 8) + theme(panel.grid = element_blank()) +
+  labs(x = "Genome position (bp)", y = "Methylation") +
+  theme(legend.position = "none")
+
+
+ggsave("plots/srnase_plot.pdf", srnase_plot, width = 5.9, height = 1)
 ```
 
 ```{r}
@@ -200,6 +192,6 @@ ggplot() +
   geom_rect(data = gene_gff, aes(xmin = X4, xmax = X5, ymin = 0, ymax = 1, fill = X3)) +
   geom_segment(data = cg, aes(x = X2, xend = X2, y = 1, yend = 1 + X4)) +
   geom_segment(data = chg, aes(x = X2, xend = X2, y = 2, yend = 2 + X4)) +
-  geom_segment(data = chh, aes(x = X2, xend = X2, y = 3, yend = 3 + X4))
+  geom_segment(data = chh, aes(x = X2, xend = X2, y = 3, yend = 3 + X4)) 
 ```
 

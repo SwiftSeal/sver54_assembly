@@ -1,207 +1,201 @@
-# Import data ------------------------------------------------------------------
 
-# Experiment metadata (samples, repeats, etc)
-metadata <- read.table("config/rna_seq_samples.tsv", header = TRUE)
+library(DESeq2)
+library(tximport)
+library(tidyverse)
+library(ggpubr)
+library(ggthemes)
 
-# Get transcript to gene relationship table from gff file
-# Helixer inserted genes are mRNA, BRAKER3 or transcript
-transcript_to_gene <- fs::path("results", "final_annotation", "final_annotation.gff") |>
-  read.table(skip = 2, sep = "\t") |>
-  dplyr::filter(V3 == "transcript" | V3 == "mRNA") |>
-  dplyr::mutate(
-    gene = stringr::str_extract(V9, "Parent=([^;]+)", group = 1),
-    transcript = stringr::str_extract(V9, "ID=([^;]+);", group = 1)
-  ) |>
-  dplyr::select(c(transcript, gene)) |>
-  dplyr::filter(!stringr::str_detect(transcript, "agat"))
-  
-# Salmon quantification files
-sample_filepaths <- list.files("results/salmon/")
+get_contrast <- function(dds, coef) {
+  base_condition <- str_split_i(coef, "_vs_", -1)
+  dds$condition <- relevel(dds$condition, base_condition)
+  dds <- nbinomWaldTest(dds)
+  res <- lfcShrink(dds, coef = coef, type = "apeglm")
+  return (res)
+}
 
-salmon_quantification <- fs::path("results", "salmon", sample_filepaths, "quant.sf") |>
-  tximport::tximport(
-    type = "salmon",
-    tx2gene = transcript_to_gene,
-    countsFromAbundance = "lengthScaledTPM"
+## Import data
+
+tx2gene <- read_tsv("../results/nf_rnaseq/tx2gene.tsv", col_names = FALSE)
+
+samples <- read_csv("../config/rnaseq.csv") |>
+  mutate(condition = str_remove(sample, "_REP\\d")) |>
+  mutate(quant = fs::path("../results/nf_rnaseq", sample, "quant.sf"))
+
+txi <- tximport(
+  samples$quant,
+  type = "salmon",
+  tx2gene = tx2gene,
+  countsFromAbundance = "lengthScaledTPM"
+)
+
+ddsTxi <- DESeqDataSetFromTximport(
+  txi, 
+  colData = samples,
+  design = ~ condition
+)
+
+dds <- DESeq(ddsTxi)
+
+vsd <- vst(dds)
+
+pca_data <- DESeq2::plotPCA(vsd, returnData = TRUE)
+
+pca_plot <- ggplot(pca_data, aes(PC1, PC2, color = condition)) +
+  geom_point() +
+  theme_bw(base_size = 8) + theme(panel.grid = element_blank()) +
+  scale_color_tableau(
+    name = NULL,
+    labels = c(
+      "INFECTION_0" = "Infection 0hpi",
+      "INFECTION_24" = "Infection 24hpi",
+      "LEAF" = "Leaf",
+      "ROOT" = "Root",
+      "SHOOT" = "Shoot",
+      "TEMPERATURE_25" = "25°C",
+      "TEMPERATURE_35" = "35°C",
+      "TEMPERATURE_4" = "4°C"
+    )
   )
 
-# Save tpm values from salmon prior to filtering
-tpm <- as.data.frame(salmon_quantification$counts)
-colnames(tpm) <- sample_filepaths
-tpm <- tpm %>%
-  rownames_to_column(var = "gene") %>%
-  pivot_longer(!gene,, names_to = "sample", values_to = "tpm") %>%
-  mutate(condition = str_extract(sample, "^(.*)_Rep.*$", group = 1)) %>%
-  group_by(gene, condition) %>%
-  summarise(tpm = mean(tpm))
-write_delim(tpm, file = "../results/tpm.tsv", delim = "\t")
+pca_plot
 
-# Analysis ---------------------------------------------------------------------
+normalised_counts <- counts(dds, normalized = TRUE) |>
+  as.data.frame()
 
-design_matrix <- model.matrix(~ 0 + condition, data = metadata)
+colnames(normalised_counts) <- dds$sample
+normalised_counts$gene <- rownames(normalised_counts)
 
-# make contrasts
-contrast_matrix <- makeContrasts(
-  Infection = conditionInfection_24 - conditionInfection_0,
-  RootvsLeaf = conditionRoot - conditionLeaf,
-  RootvsShoot = conditionRoot - conditionShoot,
-  ShootvsLeaf = conditionShoot - conditionLeaf,
-  Temperature35vs25 = conditionTemperature_35C - conditionTemperature_25C,
-  Temperature35vs4 = conditionTemperature_35C - conditionTemperature_4C,
-  Temperature25vs4 = conditionTemperature_25C - conditionTemperature_4C,
-  levels = colnames(design_matrix)
+normalised_counts <- normalised_counts |>
+  pivot_longer(!gene, names_to = "sample") |>
+  mutate(condition = str_remove(sample, "_REP\\d")) |>
+  group_by(gene, condition) |>
+  summarise(value = mean(value))
+
+# Experimental analysis --------------------------------------------------------
+# I've split the RNAseq analysis into individual experiments, as some samples
+# can't be compared directly due to tissue differences.
+
+infection_samples <- samples |>
+  filter(condition %in% c("INFECTION_24", "INFECTION_0"))
+
+txi <- tximport(
+  infection_samples$quant,
+  type = "salmon",
+  tx2gene = tx2gene,
+  countsFromAbundance = "lengthScaledTPM"
 )
 
-# create DGEList object
-experiment_dgelist <- DGEList(
-  salmon_quantification$counts,
-  group = metadata$condition
-)
-colnames(experiment_dgelist) <- sample_filepaths
-
-# Filter out lowly expressed genes
-
-dim(experiment_dgelist)
-keep <- filterByExpr(experiment_dgelist, design_matrix)
-experiment_dgelist <- experiment_dgelist[keep,]
-dim(experiment_dgelist)
-
-# Normalise the libraries
-png(
-  filename = "../results/rnaseq_counts1.png",
-  width = 300,
-  height = 100,
-  units = "mm",
-  res = 300
-)
-boxplot(cpm(experiment_dgelist, log = TRUE))
-dev.off()
-experiment_dgelist <- normLibSizes(experiment_dgelist, method = "TMM")
-png(
-  filename = "../results/rnaseq_counts2.png",
-  width = 300,
-  height = 100,
-  units = "mm",
-  res = 300
-)
-boxplot(cpm(experiment_dgelist, log = TRUE))
-dev.off()
-
-png(
-  filename = "../../pandoc-thesis/figures/rnaseq_mds.png",
-  width = 150,
-  height = 150,
-  units = "mm",
-  res = 600
-)
-plotMDS(cpm(experiment_dgelist, log = TRUE))
-dev.off()
-
-# Calculate mean lcpm per sample for each gene
-lcpm <- cpm(experiment_dgelist, log = TRUE)
-
-lcpm <- lcpm %>%
-  as_tibble(rownames = NA) %>%
-  rownames_to_column(var = "gene") %>%
-  pivot_longer(!gene, names_to = "condition", values_to = "lcpm") %>%
-  mutate(condition = experiment_dgelist$samples[condition, "group"]) %>%
-  group_by(gene, condition) %>%
-  summarise(lcpm = mean(lcpm))
-
-write.table(
-  lcpm,
-  "../results/lcpm.tsv",
-  row.names = FALSE,
-  sep = "\t"
+ddsTxi <- DESeqDataSetFromTximport(
+  txi, 
+  colData = infection_samples,
+  design = ~ condition
 )
 
+dds <- DESeq(ddsTxi)
 
-# Remove heteroscedascity
-png(
-  filename = "../../pandoc-thesis/figures/rnaseq_hetero.png",
-  width = 150,
-  height = 100,
-  units = "mm",
-  res = 600
+res <- get_contrast(dds, "condition_INFECTION_24_vs_INFECTION_0")
+summary(res)
+
+infection_table <- as.data.frame(res) |>
+  mutate(contrast = "Infection")
+
+tissue_samples <- samples |>
+  filter(condition %in% c("LEAF", "SHOOT", "ROOT"))
+
+txi <- tximport(
+  tissue_samples$quant,
+  type = "salmon",
+  tx2gene = tx2gene,
+  countsFromAbundance = "lengthScaledTPM"
 )
-par(mfrow=c(1,2))
-experiment_voom <- voom(experiment_dgelist, design_matrix, plot = TRUE)
-experiment_voom <- lmFit(experiment_voom, design_matrix)
-experiment_voom <- contrasts.fit(experiment_voom, contrasts = contrast_matrix)
-experiment_voom <- eBayes(experiment_voom)
-plotSA(experiment_voom)
-dev.off()
 
-summary(decideTests(experiment_voom))
+ddsTxi <- DESeqDataSetFromTximport(
+  txi, 
+  colData = tissue_samples,
+  design = ~ condition
+)
 
-tfit <- treat(experiment_voom, lfc = 1)
-dt <- decideTests(experiment_voom, p.value = 0.01, adjust.method = "BH")
-summary(dt)
+dds <- DESeq(ddsTxi)
 
-# a little bit weird, but merge all the results into one dataframe
-treats <- map(
-  1:ncol(dt), ~topTreat(tfit, coef = .x, n = Inf) %>%
-  mutate(coef = colnames(dt)[.x]) %>%
-  rownames_to_column(var = "gene")
-  ) %>%
-  list_rbind() %>%
+res <- get_contrast(dds, "condition_ROOT_vs_LEAF")
+root_leaf_table <- as.data.frame(res) |>
+  mutate(contrast = "root_vs_leaf")
+
+res <- get_contrast(dds, "condition_SHOOT_vs_LEAF")
+shoot_leaf_table <- as.data.frame(res) |>
+  mutate(contrast = "shoot_vs_leaf")
+
+res <- get_contrast(dds, "condition_SHOOT_vs_ROOT")
+shoot_root_table <- as.data.frame(res) |>
+  mutate(contrast = "shoot_vs_root")
+
+temperature_samples <- samples |>
+  filter(condition %in% c("TEMPERATURE_25", "TEMPERATURE_4", "TEMPERATURE_35"))
+
+txi <- tximport(
+  temperature_samples$quant,
+  type = "salmon",
+  tx2gene = tx2gene,
+  countsFromAbundance = "lengthScaledTPM"
+)
+
+ddsTxi <- DESeqDataSetFromTximport(
+  txi, 
+  colData = temperature_samples,
+  design = ~ condition
+)
+
+dds <- DESeq(ddsTxi)
+
+res <- get_contrast(dds, "condition_TEMPERATURE_4_vs_TEMPERATURE_25")
+cold_table <- as.data.frame(res) |>
+  mutate(contrast = "cold")
+
+res <- get_contrast(dds, "condition_TEMPERATURE_35_vs_TEMPERATURE_25")
+heat_table <- as.data.frame(res) |>
+  mutate(contrast = "heat")
+
+de_table <- rbind(
+  infection_table,
+  root_leaf_table,
+  shoot_leaf_table,
+  shoot_root_table,
+  cold_table,
+  heat_table
+) |>
   mutate(status = case_when(
-    adj.P.Val < 0.01 & logFC > 0 ~ "up-regulated",
-    adj.P.Val < 0.01 & logFC < 0 ~ "down-regulated",
-    TRUE ~ "not significant"
+    padj < 0.01 & log2FoldChange > 1 ~ "up-regulated",
+    padj < 0.01 & log2FoldChange < -1 ~ "down-regulated",
+    .default = "unchanged"
   ))
 
-write.table(
-  treats,
-  "../results/differential_expression.tsv",
-  row.names = FALSE,
-  sep = "\t",
+de_plot <- de_table |>
+  filter(status != "unchanged") |>
+  ggplot(aes(y = contrast, fill = status)) +
+  geom_bar(position = "dodge", colour = "#333333") +
+  labs(x = "# differentially expressed genes", y = NULL) +
+  theme_bw(base_size = 8) + theme(panel.grid = element_blank()) +
+  scale_y_discrete(
+    labels = c(
+      "shoot_vs_root" = "Shoot vs. root",
+      "shoot_vs_leaf" = "Shoot vs. leaf",
+      "root_vs_leaf" = "Root vs. leaf",
+      "Infection" = "Infection",
+      "heat" = "Heat stress",
+      "cold" = "Cold stress"
+    )  
+  ) +
+  scale_fill_tableau(name = NULL)
+
+final_plot <- ggarrange(
+  pca_plot,
+  de_plot,
+  ncol = 1,
+  align = "hv",
+  labels = "auto",
+  font.label = list(size = 10)
 )
 
-treats_summary <- treats %>%
-  group_by(coef, status) %>%
-  summarise(n = n())
-
-de_genes <- treats %>%
-  filter(status %in% c("up-regulated", "down-regulated")) %>%
-  pull(gene)
-
-lcpm_de_genes <- lcpm %>%
-  filter(gene %in% de_genes) %>%
-  pivot_wider(names_from = condition, values_from = lcpm) %>%
-  column_to_rownames(var = "gene")
-
-png(file = "rnaseq_heatmap.png", width = 4, height = 16, units = "in", res = 600)
-plot <- Heatmap(lcpm_de_genes, col = magma(100))
-draw(plot)
-dev.off()
-
-# GO analysis ------------------------------------------------------------------
-
-#geneNames <- names(geneID2GO)
-#
-#myInterestingGenes <- treats %>%
-#  filter(coef == "Temperature25vs4") %>%
-#  pull(gene)
-#
-#
-#geneList <- factor(as.integer(geneNames %in% myInterestingGenes))
-#names(geneList) <- geneNames
-#str(geneList)
-#
-#GOdata <- new(
-#  "topGOdata",
-#  ontology = "MF",
-#  allGenes = geneList,
-#  gene2GO = geneID2GO,
-#  annot = annFUN.gene2GO,
-#  nodeSize = 5
-#  )
-#
-#resultFisher <- runTest(GOdata, algorithim = "classic", statistic = "fisher")
-#
-#allRes <- GenTable(
-#  GOdata,
-#  classicFisher = resultFisher
-#)
-#View(allRes)
+write_csv(normalised_counts, file = "data/rnaseq_normalised_counts.csv")
+write_csv(de_table, file = "data/rnaseq_de_table.csv")
+ggsave("plots/rnaseq.png", final_plot, width = 5.9, height = 4, dpi = 600)
