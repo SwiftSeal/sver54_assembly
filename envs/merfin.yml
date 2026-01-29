@@ -1,6 +1,0 @@
-name: merfin
-channels:
- - bioconda
-dependencies:
- - merfin=1.0.2
- - meryl=2013

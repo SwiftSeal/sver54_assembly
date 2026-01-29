@@ -1,15 +1,17 @@
-#!/bin/bash
+#!/bin/env bash
 
-#SBATCH --array=1-6
+#SBATCH --array=1
 #SBATCH -p gpu
 #SBATCH -c 16
-#SBATCH --mem=164gb
-#SBATCH --gpus=2
+#SBATCH --mem=32gb
+#SBATCH --gpus=1
 #SBATCH --export=ALL
-#SBATCH -o logs/deepsignal.%j.%a.out
-#SBATCH -e logs/deepsignal.%j.%a.err
+#SBATCH -o logs/deepsignal.%j.%a.log
+#SBATCH -e logs/deepsignal.%j.%a.log
 
-export HDF5_PLUGIN_PATH=/mnt/shared/scratch/msmith/apps/ont-vbz-hdf-plugin-1.0.1-Linux/usr/local/hdf5/lib/plugin
+export HDF5_PLUGIN_PATH=$APPS/ont-vbz-hdf-plugin-1.0.1-Linux/usr/local/hdf5/lib/plugin
+
+set -euo pipefail
 
 ONT_DIRS=(
 "/mnt/shared/projects/jhi/potato/202205_Sver-ONT_Moray/2023-04-11_ver54_p5"
@@ -23,11 +25,8 @@ ONT_DIRS=(
 ONT_DIR=${ONT_DIRS[$SLURM_ARRAY_TASK_ID-1]}
 
 mkdir -p results/deepsignal
-cp results/final_assembly/final_assembly.fa $TMPDIR/genome.fa
 
-source activate tombo
-
-multi_to_single_fast5 \
+pixi exec -c conda-forge -c bioconda --spec "setuptools<81" --spec ont-fast5-api multi_to_single_fast5 \
   -i $ONT_DIR \
   -s $TMPDIR/fast5_single \
   --recursive \
@@ -39,8 +38,8 @@ cat $TMPDIR/guppy/pass/*.fastq > $TMPDIR/reads.fastq
 cat $TMPDIR/guppy/sequencing_summary.txt > $TMPDIR/sequencing_summary.txt
 rm -r $TMPDIR/guppy
 
-tombo preprocess annotate_raw_with_fastqs \
-  --processes 16 \
+pixi exec -c conda-forge -c bioconda --spec ont-tombo=1.5.1 tombo preprocess annotate_raw_with_fastqs \
+  --processes $SLURM_CPUS_PER_TASK \
   --overwrite \
   --fast5-basedir $TMPDIR/fast5_single \
   --fastq-filenames $TMPDIR/reads.fastq \
@@ -48,22 +47,19 @@ tombo preprocess annotate_raw_with_fastqs \
   --basecall-subgroup BaseCalled_template \
   --sequencing-summary-filenames $TMPDIR/sequencing_summary.txt
 
-tombo resquiggle \
+pixi exec -c conda-forge -c bioconda --spec ont-tombo=1.5.1 tombo resquiggle \
   $TMPDIR/fast5_single \
-  $TMPDIR/genome.fa \
-  --processes 16 \
+  results/assembly/cpc.assembly.fa \
+  --processes $SLURM_CPUS_PER_TASK \
   --overwrite \
   --corrected-group RawGenomeCorrected_000 \
   --basecall-group Basecall_1D_000
 
-source deactivate
-
-source activate deepsignal
-
-deepsignal_plant call_mods --input_path $TMPDIR/fast5_single \
+pixi exec -c conda-forge -c bioconda --spec deepsignal-plant=0.1.6 deepsignal_plant call_mods \
+  --input_path $TMPDIR/fast5_single \
   --model_path $APPS/model.dp2.CNN.arabnrice2-1_120m_R9.4plus_tem.bn13_sn16.both_bilstm.epoch6.ckpt \
   --result_file "results/deepsignal/$(basename $ONT_DIR).tsv" \
   --corrected_group RawGenomeCorrected_000 \
   --motifs C \
-  --nproc 16 \
+  --nproc $SLURM_CPUS_PER_TASK \
   --nproc_gpu 4

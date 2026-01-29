@@ -8,10 +8,10 @@ library(scattermore)
 
 theme_set(theme_bw(base_size = 8, base_family = "Arial") + theme(panel.grid = element_blank()))
 
-results_path = "Z://scratch/sver54_assembly/results"
+base_directory = "Z://scratch/sver54_assembly/results"
 
 centromere_positions <- read_tsv(
-  "../results/centromeres/centromere_positions.bed",
+  "results/centromeres/centromere_positions.bed",
   col_names = FALSE
 ) |>
   select(chromosome = X1, cen_start = X2, cen_end = X3)

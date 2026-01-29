@@ -4,8 +4,8 @@
 #SBATCH -c 32
 #SBATCH --mem=100G
 #SBATCH --export=ALL
-#SBATCH -o logs/earlgrey.%j.out
-#SBATCH -e logs/earlgrey.%j.err
+#SBATCH -o logs/earlgrey.%j.log
+#SBATCH -e logs/earlgrey.%j.log
 
 source activate earlgrey
 

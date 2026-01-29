@@ -1,4 +1,0 @@
-name: genomescope2
-dependencies:
- - kmc=3.2.1
- - genomescope2=2.0
